@@ -6,7 +6,6 @@
     <title>POS Demo (Remote Worker)</title>
     <link rel="stylesheet" href="/styles.css" />
     <style>
-      /* Custom utilities cho PublicMenu (primary blue palette + animations) */
       .bg-primary-50 { background-color: #eff6ff; }
       .bg-primary-100 { background-color: #dbeafe; }
       .bg-primary-200 { background-color: #bfdbfe; }
@@ -69,7 +68,7 @@
   <body class="bg-stone-50">
     <div id="root"></div>
     <script>
-      // Proxy: gọi Worker API thật (đã deploy trên Cloudflare)
+      // Proxy /api/* -> deployed Worker
       const API_BASE = 'https://pos-demo.webhook-logger.workers.dev';
       const originalFetch = window.fetch;
       window.fetch = function(url, opts) {
@@ -79,6 +78,9 @@
         return originalFetch(url, opts);
       };
     </script>
-    <script src="/app.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+    <script type="text/babel" data-presets="react" data-type="module" src="/app.jsx"></script>
   </body>
 </html>

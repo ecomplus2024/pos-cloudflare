@@ -29,12 +29,8 @@
       .border-primary-500 { border-color: #3b82f6; }
       .border-primary-600 { border-color: #2563eb; }
       .ring-primary-400 { --tw-ring-color: #60a5fa; }
-
-      /* Sticky offsets cho PublicMenu (header 72px, tabs 48px = 120px) */
       .sticky-top-72 { position: sticky; top: 72px; z-index: 10; }
       .sticky-top-120 { position: sticky; top: 120px; z-index: 10; }
-
-      /* Cart FAB animations */
       @keyframes pulse-ring {
         0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
         70% { box-shadow: 0 0 0 15px rgba(37, 99, 235, 0); }
@@ -60,8 +56,6 @@
         0%, 100% { transform: translateY(0); }
         50% { transform: translateY(-6px); }
       }
-
-      /* Modal/sheet transitions */
       .animate-in { animation-duration: 200ms; animation-fill-mode: forwards; }
       .fade-in { animation-name: fadeIn; }
       .slide-in-from-bottom { animation-name: slideInFromBottom; }
@@ -69,14 +63,18 @@
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
       @keyframes slideInFromBottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
       @keyframes zoomIn95 { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-
-      /* Toast slide */
       @keyframes slideInRight { from { transform: translateX(120%); } to { transform: translateX(0); } }
       .animate-slide-in-right { animation: slideInRight 0.3s ease-out; }
     </style>
   </head>
   <body class="bg-stone-50">
     <div id="root"></div>
-    <script src="/app.js"></script>
+    <!-- React 18 UMD -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel standalone để transform JSX trong browser -->
+    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+    <!-- App JSX -->
+    <script type="text/babel" data-presets="react" data-type="module" src="/app.jsx"></script>
   </body>
 </html>
