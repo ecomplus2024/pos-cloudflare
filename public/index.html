@@ -6,6 +6,74 @@
     <title>Menu POS Demo</title>
     <meta name="description" content="Demo POS chạy trên Cloudflare Workers + D1" />
     <link rel="stylesheet" href="./styles.css" />
+    <style>
+      /* Custom utilities cho PublicMenu (primary blue palette + animations) */
+      .bg-primary-50 { background-color: #eff6ff; }
+      .bg-primary-100 { background-color: #dbeafe; }
+      .bg-primary-200 { background-color: #bfdbfe; }
+      .bg-primary-400 { background-color: #60a5fa; }
+      .bg-primary-500 { background-color: #3b82f6; }
+      .bg-primary-600 { background-color: #2563eb; }
+      .bg-primary-700 { background-color: #1d4ed8; }
+      .bg-primary-800 { background-color: #1e40af; }
+      .bg-primary-900 { background-color: #1e3a8a; }
+      .text-primary-100 { color: #dbeafe; }
+      .text-primary-200 { color: #bfdbfe; }
+      .text-primary-400 { color: #60a5fa; }
+      .text-primary-500 { color: #3b82f6; }
+      .text-primary-600 { color: #2563eb; }
+      .text-primary-700 { color: #1d4ed8; }
+      .text-primary-800 { color: #1e40af; }
+      .border-primary-200 { border-color: #bfdbfe; }
+      .border-primary-400 { border-color: #60a5fa; }
+      .border-primary-500 { border-color: #3b82f6; }
+      .border-primary-600 { border-color: #2563eb; }
+      .ring-primary-400 { --tw-ring-color: #60a5fa; }
+
+      /* Sticky offsets cho PublicMenu (header 72px, tabs 48px = 120px) */
+      .sticky-top-72 { position: sticky; top: 72px; z-index: 10; }
+      .sticky-top-120 { position: sticky; top: 120px; z-index: 10; }
+
+      /* Cart FAB animations */
+      @keyframes pulse-ring {
+        0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(37, 99, 235, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+      }
+      @keyframes wiggle {
+        0%, 100% { transform: rotate(0deg); }
+        25% { transform: rotate(-10deg); }
+        75% { transform: rotate(10deg); }
+      }
+      @keyframes blob {
+        0%, 100% { transform: translate(0,0) scale(1); }
+        33% { transform: translate(30px,-50px) scale(1.1); }
+        66% { transform: translate(-20px,20px) scale(0.9); }
+      }
+      .animate-wiggle { animation: wiggle 0.5s ease-in-out; }
+      .animate-pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
+      .animate-blob { animation: blob 7s infinite; }
+      .animation-delay-2000 { animation-delay: 2s; }
+      .animation-delay-4000 { animation-delay: 4s; }
+      .animate-bounce-slow { animation: bounce 2s infinite; }
+      @keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-6px); }
+      }
+
+      /* Modal/sheet transitions */
+      .animate-in { animation-duration: 200ms; animation-fill-mode: forwards; }
+      .fade-in { animation-name: fadeIn; }
+      .slide-in-from-bottom { animation-name: slideInFromBottom; }
+      .zoom-in-95 { animation-name: zoomIn95; }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes slideInFromBottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      @keyframes zoomIn95 { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+      /* Toast slide */
+      @keyframes slideInRight { from { transform: translateX(120%); } to { transform: translateX(0); } }
+      .animate-slide-in-right { animation: slideInRight 0.3s ease-out; }
+    </style>
   </head>
   <body class="bg-stone-50">
     <div id="root"></div>
