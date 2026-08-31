@@ -64,6 +64,30 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
+-- Users (đăng nhập cashier/admin)
+-- password_hash = SHA-256(salt + password), salt random 16 bytes hex
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL DEFAULT 1,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  full_name TEXT,
+  role TEXT NOT NULL DEFAULT 'staff',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Sessions: token-based auth, mỗi token là 32 bytes hex random
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
 -- Dữ liệu mẫu tiếng Việt
 INSERT INTO categories (name, sort_order) VALUES
   ('Cà phê', 1),
