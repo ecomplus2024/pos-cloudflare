@@ -1239,11 +1239,15 @@ function PublicMenuView() {
     wrap.appendChild(MyOrderView());
   }
 
-  // Modals + overlay
-  wrap.appendChild(CartModal());
-  wrap.appendChild(SizeModal());
-  wrap.appendChild(EditItemModal());
-  wrap.appendChild(WelcomeOverlay());
+  // Modals + overlay (chỉ append nếu return non-null)
+  const cartModalEl = CartModal();
+  if (cartModalEl) wrap.appendChild(cartModalEl);
+  const sizeModalEl = SizeModal();
+  if (sizeModalEl) wrap.appendChild(sizeModalEl);
+  const editModalEl = EditItemModal();
+  if (editModalEl) wrap.appendChild(editModalEl);
+  const welcomeEl = WelcomeOverlay();
+  if (welcomeEl) wrap.appendChild(welcomeEl);
 
   // Toasts
   if (state.public.toasts.length > 0) {
