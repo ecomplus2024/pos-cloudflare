@@ -135,7 +135,7 @@ function LoginView() {
         h("div", {},
           h("label", { className: "block text-sm font-medium text-gray-700 mb-2" }, "Tên đăng nhập"),
           h("input", {
-            type: "text", value: username,
+            type: "text", value: username, "data-focus-key": "login-username",
             oninput: (e) => setState({ loginForm: { ...state.loginForm, username: e.target.value } }),
             className: "w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none",
             placeholder: "admin", required: true,
@@ -144,7 +144,7 @@ function LoginView() {
         h("div", {},
           h("label", { className: "block text-sm font-medium text-gray-700 mb-2" }, "Mật khẩu"),
           h("input", {
-            type: "password", value: password,
+            type: "password", value: password, "data-focus-key": "login-password",
             oninput: (e) => setState({ loginForm: { ...state.loginForm, password: e.target.value } }),
             className: "w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none",
             placeholder: "••••••••", required: true,
@@ -257,7 +257,7 @@ function PosApp() {
         h("h2", { className: "text-xl font-bold" }, `Bàn: ${state.selectedTable.name}`),
       ),
       h("input", {
-        type: "search", placeholder: "🔍 Tìm món...", value: state.search,
+        type: "search", placeholder: "🔍 Tìm món...", value: state.search, "data-focus-key": "menu-search",
         oninput: (e) => setState({ search: e.target.value }),
         className: "px-3 py-2 border border-gray-300 rounded-lg text-sm w-48 focus:outline-none focus:ring-2 focus:ring-orange-500",
       }),
@@ -529,22 +529,49 @@ async function initAuth() {
 }
 
 // ============ Render ============
+// Giữ focus + selection khi re-render để input không bị mất cursor khi gõ
+function captureFocus() {
+  const active = document.activeElement;
+  if (!active || !active.dataset || !active.dataset.focusKey) return null;
+  return {
+    focusKey: active.dataset.focusKey,
+    selectionStart: active.selectionStart,
+    selectionEnd: active.selectionEnd,
+  };
+}
+
+function restoreFocus(saved) {
+  if (!saved) return;
+  const el = document.querySelector(`[data-focus-key="${saved.focusKey}"]`);
+  if (!el) return;
+  el.focus();
+  try {
+    if (saved.selectionStart != null) {
+      el.setSelectionRange(saved.selectionStart, saved.selectionEnd);
+    }
+  } catch (e) { /* ignore */ }
+}
+
 function render() {
   const root = document.getElementById("root");
+  const savedFocus = captureFocus();
   root.innerHTML = "";
 
   if (state.authLoading) {
     root.appendChild(h("div", { className: "min-h-screen flex items-center justify-center" },
       h("div", { className: "text-gray-500" }, "Đang tải...")));
+    restoreFocus(savedFocus);
     return;
   }
 
   if (!state.user) {
     root.appendChild(LoginView());
+    restoreFocus(savedFocus);
     return;
   }
 
   root.appendChild(PosApp());
+  restoreFocus(savedFocus);
 }
 
 // Khởi động
