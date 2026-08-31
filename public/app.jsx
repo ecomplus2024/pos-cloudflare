@@ -460,93 +460,175 @@ function PosApp({ user, onLogout }) {
 }
 
 // ============ Public: WelcomeOverlay ============
-function WelcomeOverlay({ onDismiss, storeName, featuredProducts, step }) {
+function WelcomeOverlay({ onDismiss, storeName, featuredProducts, step, facebookUrl }) {
   const showFeatured = featuredProducts.length > 0 && step >= 2;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-primary-900 via-primary-800 to-black p-4 overflow-hidden">
-      <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-primary-500 rounded-full opacity-20 animate-blob" />
-      <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-yellow-500 rounded-full opacity-20 animate-blob animation-delay-2000" />
-      <div className="relative max-w-md w-full text-center">
-        <h1 className={"text-3xl md:text-5xl font-black mb-4 transition-all duration-700 bg-gradient-to-r from-yellow-200 via-white to-yellow-200 bg-clip-text text-transparent " + (step >= 1 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0")}>
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-primary-900 via-primary-800 to-black text-white">
+      {/* Background decorations */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-0 left-0 h-full w-full opacity-10" style={{backgroundImage: "url('https://www.transparenttextures.com/patterns/cubes.png')"}}></div>
+        <div className="absolute -top-20 -left-20 h-64 w-64 animate-blob rounded-full bg-primary-500 opacity-20 blur-3xl" />
+        <div className="animation-delay-2000 absolute -bottom-20 -right-20 h-64 w-64 animate-blob rounded-full bg-yellow-500 opacity-20 blur-3xl" />
+      </div>
+
+      <div className={"relative px-6 text-center transform transition-all duration-700 delay-100 ease-out " + (step >= 2 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0")}>
+        {/* Store name với gradient text italic */}
+        <h1 className="bg-gradient-to-r from-yellow-200 via-white to-yellow-200 bg-clip-text text-3xl font-black italic text-transparent drop-shadow-sm md:text-5xl">
           {storeName}
         </h1>
-        <p className={"text-yellow-100 text-lg mb-8 transition-all duration-700 " + (step >= 1 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0")}>
-          Xin được phục vụ quý khách
+        <div className="mx-auto mb-6 h-1 w-24 rounded-full bg-gradient-to-r from-transparent via-yellow-400 to-transparent" />
+
+        <p className="mb-6 text-xl font-light leading-relaxed text-primary-100 md:text-2xl">
+          Xin được phục vụ
         </p>
+
+        {/* Featured products */}
         {showFeatured && (
-          <div className="grid grid-cols-4 gap-3 mb-8 transition-all duration-700 translate-y-0 opacity-100">
-            {featuredProducts.slice(0, 4).map((p, i) => (
-              <div key={i} className="bg-white/10 backdrop-blur-sm rounded-xl p-2">
-                <div className="aspect-square bg-primary-400 rounded-lg mb-2 overflow-hidden flex items-center justify-center">
-                  {p.image_url
-                    ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
-                    : <div className="text-3xl">☕</div>}
+          <div className={"mb-6 transform transition-all duration-700 delay-200 " + (step >= 2 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0")}>
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-yellow-400/50 to-transparent" />
+              <span className="text-yellow-400 font-black text-sm uppercase tracking-widest">Món mới</span>
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-yellow-400/50 to-transparent" />
+            </div>
+            <div className="flex justify-center gap-4 flex-wrap">
+              {featuredProducts.slice(0, 4).map((p, i) => (
+                <div key={i} className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden w-36 shadow-xl">
+                  <div className="aspect-square bg-white/5 flex items-center justify-center">
+                    {p.image_url
+                      ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                      : <div className="text-3xl text-white/40">🍲</div>}
+                  </div>
+                  <div className="p-3 text-center">
+                    <p className="text-sm font-bold text-white line-clamp-2 leading-tight mb-1">{p.name}</p>
+                    <p className="text-yellow-400 font-black text-sm">{formatVND(p.price)}</p>
+                  </div>
                 </div>
-                <div className="text-white text-xs font-semibold line-clamp-2">{p.name}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
-        <button onClick={onDismiss}
-          className={"px-12 py-4 bg-gradient-to-r from-yellow-400 to-yellow-600 text-gray-900 text-xl font-black rounded-2xl shadow-2xl hover:shadow-yellow-300/50 hover:scale-105 transition-all duration-700 " + (step >= 3 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0 pointer-events-none")}>
-          BẮT ĐẦU
-        </button>
+
+        {/* BẮT ĐẦU button với ChevronRight + animate-ping */}
+        <div className={"transform transition-all duration-700 delay-200 " + (step >= 3 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0")}>
+          <button onClick={onDismiss}
+            className="group relative mx-auto flex items-center justify-center space-x-2 rounded-full bg-gradient-to-r from-yellow-400 to-yellow-600 px-12 py-4 text-xl font-black text-black shadow-xl transition-all duration-300 hover:scale-105 active:scale-95">
+            <span>BẮT ĐẦU</span>
+            <span className="transition-transform group-hover:translate-x-1 text-2xl">→</span>
+            <div className="absolute inset-0 animate-ping rounded-full ring-2 ring-white/50 opacity-50"></div>
+          </button>
+          <p className="mt-4 text-sm text-white/50">Nhấn để gọi món</p>
+        </div>
+      </div>
+
+      {/* Bottom: Facebook link + Menu điện tử */}
+      <div className={"absolute bottom-6 flex flex-col items-center space-y-3 transform transition-all duration-700 delay-500 " + (step >= 3 ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0")}>
+        {facebookUrl && (
+          <a href={facebookUrl} target="_blank" rel="noreferrer"
+            className="flex items-center space-x-3 rounded-full border border-blue-400/30 bg-blue-600 px-6 py-3 font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:bg-blue-500 hover:shadow-blue-500/40">
+            <span>Kết bạn Facebook để đặt ship khi cần</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+            </svg>
+          </a>
+        )}
+        <p className="flex items-center justify-center gap-2 text-xs font-light uppercase tracking-widest text-white/40">
+          Menu điện tử cho
+          <span className="font-bold text-yellow-400">{storeName}</span>
+        </p>
       </div>
     </div>
   );
 }
 
 // ============ Public: Modals ============
-function CartModal({ cart, total, onClose, onUpdateQty, onEdit, onSubmit, isOrdering, orderSuccess }) {
+function CartModal({ cart, total, onClose, onUpdateQty, onEdit, onSubmit, isOrdering, orderSuccess, onRemove }) {
   return (
-    <div className="fixed inset-0 bg-black/50 z-40 flex items-end justify-center animate-in fade-in" onClick={onClose}>
-      <div className="bg-white rounded-t-3xl p-4 max-w-lg w-full max-h-[80vh] overflow-y-auto animate-in slide-in-from-bottom" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xl font-bold">Giỏ hàng của bạn</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end" onClick={onClose}>
+      <div className="bg-white w-full max-h-[80vh] rounded-t-3xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b flex items-center justify-between bg-gray-50">
+          <h2 className="text-xl font-black">Giỏ hàng của bạn</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full text-2xl">×</button>
         </div>
-        <div className="space-y-2 mb-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-sm">Giỏ hàng trống</div>
-          ) : cart.map((it) => {
-            const lineTotal = (it.product.price + it.toppings.reduce((s, t) => s + t.price, 0)) * it.quantity;
+          ) : cart.map((it, idx) => {
+            const hasToppings = it.toppings.length > 0;
+            const hasNotes = it.notes && it.notes.trim().length > 0;
             return (
-              <div key={it.tempId} className="bg-gray-50 rounded-xl p-3">
-                <div className="flex items-start justify-between mb-1">
-                  <div className="flex-1">
-                    <div className="font-semibold text-sm">{it.product.name}</div>
-                    {it.size && <div className="text-xs text-primary-600 font-semibold">Size: {it.size.name}</div>}
+              <div key={it.tempId} className="bg-gray-50 rounded-xl p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-black text-gray-800 text-sm">
+                      {it.product.name} {it.size && <span className="text-primary-600 font-normal">({it.size.name})</span>}
+                    </h3>
+                    <p className="text-primary-600 font-bold text-sm">{it.product.price.toLocaleString()}đ</p>
+                    <button onClick={() => onEdit(it.tempId)} className="mt-2 w-full text-left">
+                      {hasToppings ? (
+                        <div className="flex items-start gap-1.5 mb-1.5">
+                          <span className="text-primary-600 flex-shrink-0 mt-0.5">🧩</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black text-primary-600 uppercase tracking-wider mb-0.5">Topping</p>
+                            <div className="flex flex-wrap gap-1">
+                              {it.toppings.map((t, ti) => (
+                                <span key={ti} className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded">+{t.name}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 mb-1 text-xs font-bold text-gray-400 hover:text-primary-600 transition">
+                          <span>🧩</span>
+                          <span className="text-[10px] font-black uppercase tracking-wider">Topping:</span>
+                          <span className="italic font-medium">Thêm topping...</span>
+                        </div>
+                      )}
+                      {hasNotes ? (
+                        <div className="flex items-start gap-1.5 mt-1.5 p-2 bg-yellow-50 border-l-2 border-yellow-400 rounded-r">
+                          <span className="text-yellow-600 flex-shrink-0 mt-0.5">💬</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black text-yellow-700 uppercase tracking-wider mb-0.5">Ghi chú</p>
+                            <p className="text-xs text-yellow-700 font-medium leading-snug">{it.notes}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-gray-400 hover:text-primary-600 transition">
+                          <span>💬</span>
+                          <span className="text-[10px] font-black uppercase tracking-wider">Ghi chú:</span>
+                          <span className="italic font-medium">Thêm ghi chú...</span>
+                        </div>
+                      )}
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => onUpdateQty(it.tempId, -1)} className="w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 font-bold">−</button>
-                    <span className="w-6 text-center font-semibold">{it.quantity}</span>
-                    <button onClick={() => onUpdateQty(it.tempId, +1)} className="w-7 h-7 rounded-full bg-primary-500 hover:bg-primary-600 text-white font-bold">+</button>
+                  <div className="flex items-center space-x-2 flex-shrink-0">
+                    <button onClick={() => onUpdateQty(it.tempId, -1)} className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center font-bold">−</button>
+                    <span className="font-black w-8 text-center">{it.quantity}</span>
+                    <button onClick={() => onUpdateQty(it.tempId, +1)} className="w-8 h-8 bg-primary-600 text-white rounded-full flex items-center justify-center font-bold">+</button>
                   </div>
                 </div>
-                {it.toppings.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-1">
-                    {it.toppings.map((t) => <span key={t.id} className="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">+{t.name}</span>)}
-                  </div>
-                )}
-                {it.notes && <div className="text-xs px-2 py-1 bg-yellow-50 text-yellow-700 border-l-2 border-yellow-400 rounded mb-1">📝 {it.notes}</div>}
-                <div className="flex items-center justify-between">
-                  <button onClick={() => onEdit(it.tempId)} className="text-xs text-primary-600 hover:text-primary-700 font-semibold">⚙ Thêm topping / ghi chú</button>
-                  <span className="text-primary-600 font-bold text-sm">{formatVND(lineTotal)}</span>
-                </div>
+                <button onClick={() => onRemove(it.tempId)}
+                  className="mt-3 text-xs font-bold text-red-400 hover:text-red-600 uppercase tracking-wider">
+                  Xóa món
+                </button>
               </div>
             );
           })}
         </div>
-        <div className="border-t pt-3 sticky bottom-0 bg-white">
+        <div className="p-4 border-t bg-gray-50">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-700 font-semibold">Tổng cộng</span>
-            <span className="text-2xl font-bold text-primary-600">{formatVND(total)}</span>
+            <span className="font-bold text-gray-600">Tổng cộng:</span>
+            <span className="text-2xl font-black text-primary-600">{total.toLocaleString()}đ</span>
           </div>
-          <button onClick={onSubmit} disabled={isOrdering || cart.length === 0}
-            className={`w-full py-4 rounded-xl font-bold text-white text-lg transition shadow-lg ${
-              isOrdering ? "bg-gray-400" : cart.length === 0 ? "bg-gray-300 cursor-not-allowed" : "bg-gradient-to-r from-primary-600 to-primary-700 hover:shadow-primary-200"
-            }`}>
-            {isOrdering ? "Đang gửi..." : orderSuccess ? "✓ Đã gửi đơn!" : "Gửi đơn hàng"}
+          <button onClick={onSubmit} disabled={isOrdering || orderSuccess}
+            className="w-full bg-primary-600 text-white py-4 rounded-xl font-black text-lg hover:bg-primary-700 transition disabled:opacity-50 flex items-center justify-center space-x-2">
+            {orderSuccess ? (
+              <>
+                <span className="text-2xl">✓</span>
+                <span>Đã gửi đơn!</span>
+              </>
+            ) : (
+              <span>{isOrdering ? "Đang gửi..." : "Gửi đơn hàng"}</span>
+            )}
           </button>
         </div>
       </div>
@@ -557,18 +639,24 @@ function CartModal({ cart, total, onClose, onUpdateQty, onEdit, onSubmit, isOrde
 function SizeModal({ product, onConfirm, onClose }) {
   if (!product) return null;
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={onClose}>
-      <div className="bg-white rounded-3xl p-6 max-w-sm w-full animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-xl font-bold mb-2">{product.name}</h3>
-        <p className="text-gray-500 text-sm mb-4">Vui lòng chọn size</p>
-        <div className="grid grid-cols-1 gap-2">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden">
+        <div className="p-6 border-b bg-gray-50">
+          <h3 className="text-lg font-black text-gray-800 text-center uppercase tracking-tight">Chọn kích cỡ</h3>
+          <p className="text-xs text-gray-500 text-center font-bold">{product.name}</p>
+        </div>
+        <div className="p-6 space-y-3">
           {product.sizes.map((s) => (
             <button key={s.id} onClick={() => onConfirm(s)}
-              className="p-3 rounded-xl border-2 border-gray-200 hover:border-primary-500 hover:bg-primary-50 flex items-center justify-between transition">
-              <span className="font-bold text-lg">{s.name}</span>
-              <span className="text-primary-600 font-bold">{formatVND(s.price)}</span>
+              className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-gray-100 hover:border-primary-500 hover:bg-primary-50 transition-all group">
+              <span className="font-black text-gray-800 group-hover:text-primary-700">{s.name}</span>
+              <span className="font-black text-primary-600">{s.price.toLocaleString()}đ</span>
             </button>
           ))}
+        </div>
+        <div className="p-6 bg-gray-50 border-t">
+          <button onClick={onClose} className="w-full py-3 bg-white border text-gray-600 font-bold rounded-xl uppercase hover:bg-gray-100 transition">Đóng</button>
         </div>
       </div>
     </div>
@@ -578,48 +666,56 @@ function SizeModal({ product, onConfirm, onClose }) {
 function EditItemModal({ item, toppings, categories, onClose, onToggleTopping, onUpdateNotes }) {
   if (!item) return null;
   const category = categories.find((c) => c.id === item.product.category_id);
-  const allowedIds = category?.allowed_toppings || [];
-  const allowedToppings = allowedIds.length > 0
-    ? toppings.filter((t) => allowedIds.includes(t.id))
-    : toppings;
+  const allowedToppings = (category?.allow_all_toppings !== false)
+    ? toppings
+    : (category?.allowed_toppings?.length > 0
+        ? toppings.filter((t) => category.allowed_toppings.includes(t.id))
+        : []);
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center animate-in fade-in" onClick={onClose}>
-      <div className="bg-white rounded-t-3xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold">{item.product.name}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl">×</button>
+    <div className="fixed inset-0 z-[60] flex items-end">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-h-[75vh] rounded-t-3xl overflow-hidden flex flex-col">
+        <div className="p-4 border-b flex items-center justify-between bg-gray-50">
+          <div>
+            <h3 className="text-lg font-black text-gray-800">Tuỳ chỉnh món</h3>
+            <p className="text-sm font-bold text-gray-500">{item.product.name}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full text-2xl">×</button>
         </div>
-        <div className="mb-4">
-          <div className="text-sm font-semibold mb-2 text-gray-700">Topping</div>
-          <div className="flex flex-wrap gap-2">
-            {allowedToppings.length === 0
-              ? <div className="text-gray-400 text-sm">Món này không có topping</div>
-              : allowedToppings.map((t) => {
-                  const selected = item.toppings.some((x) => x.id === t.id);
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {allowedToppings.length > 0 && (
+            <div>
+              <h4 className="text-sm font-black text-gray-800 mb-3">Chọn Topping</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {allowedToppings.map((t) => {
+                  const selected = item.toppings.find((x) => x.id === t.id);
                   return (
                     <button key={t.id} onClick={() => onToggleTopping(t)}
-                      className={`px-3 py-2 rounded-full text-sm font-medium border-2 transition ${
-                        selected ? "bg-emerald-100 border-emerald-500 text-emerald-700" : "bg-white border-gray-200 hover:border-gray-300"
-                      }`}>
-                      {selected ? `✓ ${t.name} +${t.price.toLocaleString()}đ` : `+ ${t.name} +${t.price.toLocaleString()}đ`}
+                      className={`p-3 rounded-xl text-left text-sm font-bold transition border ${selected ? "bg-primary-600 text-white border-primary-600" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"}`}>
+                      <div>{t.name}</div>
+                      <div className={`text-xs mt-0.5 ${selected ? "text-primary-100" : "text-gray-400"}`}>+{t.price.toLocaleString()}đ</div>
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          )}
+          <div>
+            <h4 className="text-sm font-black text-gray-800 mb-3">Ghi chú</h4>
+            <textarea rows={2} placeholder="VD: không đá, ít đường, cay ít..."
+              value={item.notes || ""}
+              onChange={(e) => onUpdateNotes(e.target.value)}
+              data-focus-key={`public-notes-${item.tempId}`}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-400 resize-none"
+            />
           </div>
         </div>
-        <div className="mb-4">
-          <label className="text-sm font-semibold text-gray-700 mb-2 block">Ghi chú</label>
-          <textarea rows={2} placeholder="VD: không đá, ít đường, cay ít..."
-            value={item.notes || ""}
-            data-focus-key={`public-notes-${item.tempId}`}
-            onChange={(e) => onUpdateNotes(e.target.value)}
-            className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none resize-none"
-          />
+        <div className="p-4 border-t bg-gray-50">
+          <button onClick={onClose}
+            className="w-full py-4 bg-primary-600 text-white rounded-xl font-black text-base hover:bg-primary-700 transition">
+            Xong
+          </button>
         </div>
-        <button onClick={onClose}
-          className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl transition">
-          Xong
-        </button>
       </div>
     </div>
   );
@@ -627,21 +723,26 @@ function EditItemModal({ item, toppings, categories, onClose, onToggleTopping, o
 
 function TableGroupModal({ table, onChooseContinue, onChooseCallStaff }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white rounded-3xl p-6 max-w-sm w-full animate-in zoom-in-95 text-center">
-        <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center text-4xl">🍽️</div>
-        <h2 className="text-xl font-black text-gray-800 mb-3">Bàn này đã được sử dụng</h2>
-        <p className="text-gray-600 mb-6 leading-relaxed">
-          Bàn {table?.name} đã có đơn hàng được gọi từ trước. Vui lòng chọn 1 trong 2 lựa chọn:
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-xl font-black text-gray-800 mb-3">
+          Bàn này đã có món được gọi từ trước
+        </h2>
+        <p className="text-gray-700 mb-6 leading-relaxed">
+          Nếu bạn đang ngồi và muốn gọi thêm món, vui lòng chọn bên dưới.
+          Nếu bạn là khách mới, hãy gọi nhân viên đến để xử lý đơn hàng
+          trước khi đặt món.
         </p>
-        <button onClick={onChooseContinue}
-          className="w-full py-3 mb-2 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl transition">
-          Tôi đang ngồi, gọi thêm món
-        </button>
-        <button onClick={onChooseCallStaff}
-          className="w-full py-3 bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold rounded-xl transition">
-          Tôi là khách mới, gọi nhân viên
-        </button>
+        <div className="flex flex-col gap-3">
+          <button onClick={onChooseContinue}
+            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors">
+            Tôi đang ngồi, gọi thêm món
+          </button>
+          <button onClick={onChooseCallStaff}
+            className="w-full bg-gray-200 text-gray-800 py-3 rounded-xl font-bold hover:bg-gray-300 transition-colors">
+            Tôi là khách mới, gọi nhân viên
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -664,74 +765,96 @@ function WaitingStaffScreen() {
 function MyOrderView({ items, onDelete, onReduce }) {
   if (items.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto p-4">
-        <div className="text-center py-16 text-gray-400">
-          <div className="text-6xl mb-4">📋</div>
-          <p>Chưa có món nào trong đơn</p>
+      <div className="max-w-4xl mx-auto p-4">
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4 text-gray-300">📋</div>
+          <p className="text-gray-500 font-bold">Chưa có món nào</p>
+          <p className="text-gray-400 text-sm mt-2">Món đã chọn sẽ hiện ở đây</p>
         </div>
       </div>
     );
   }
+  // Group items by name + toppings
   const groups = {};
   items.forEach((it) => {
-    const toppingKey = (it.toppings || []).slice().sort().join("|");
+    const toppingKey = (it.toppings || []).slice().sort().join(",");
     const k = `${it.name}|${toppingKey}`;
-    if (!groups[k]) groups[k] = [];
-    groups[k].push(it);
+    if (groups[k]) {
+      groups[k].quantity = (groups[k].quantity || 0) + it.quantity;
+      groups[k].total_price = (groups[k].total_price || 0) + it.price * it.quantity;
+      groups[k].items.push(it);
+    } else {
+      groups[k] = { ...it, quantity: it.quantity, total_price: it.price * it.quantity, items: [it] };
+    }
   });
   const total = items.reduce((s, it) => s + it.price * it.quantity, 0);
 
+  const statusBadge = (s) => {
+    if (s === "pending") return <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full flex items-center space-x-1"><span>✓</span><span>Đã nhận món</span></span>;
+    if (s === "processing") return <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full flex items-center space-x-1"><span>👨‍🍳</span><span>Đang làm</span></span>;
+    if (s === "completed") return <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center space-x-1"><span>✓</span><span>Đã phục vụ</span></span>;
+    return null;
+  };
+
   return (
-    <div className="max-w-2xl mx-auto p-4 pb-32">
+    <div className="max-w-4xl mx-auto p-4">
       <div className="space-y-3">
-        {Object.entries(groups).map(([k, list]) => {
-          const first = list[0];
-          const totalQty = list.reduce((s, it) => s + it.quantity, 0);
-          const statusBadge = (s) => {
-            if (s === "pending") return <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">Đã nhận món</span>;
-            if (s === "processing") return <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">Đang làm</span>;
-            if (s === "completed") return <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Đã phục vụ</span>;
-            return null;
-          };
-          return (
-            <div key={k} className="bg-white rounded-xl shadow-md p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1">
-                    {first.status === "pending" && (
-                      <button onClick={() => onReduce(first.order_id, first.id, first.quantity)}
-                        className="w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 text-red-700 font-bold">−</button>
-                    )}
-                    <span className="w-8 text-center font-bold">{totalQty}x</span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-800">{first.name}</div>
-                    {first.size_name && <div className="text-xs text-primary-600 font-semibold">Size: {first.size_name}</div>}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {statusBadge(first.status)}
-                  {first.status === "pending" && (
-                    <button onClick={() => onDelete(first.order_id, first.id)}
-                      className="w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 text-red-700 flex items-center justify-center" title="Xóa món">🗑</button>
-                  )}
+        {Object.values(groups).map((item, idx) => (
+          <div key={idx} className="bg-white rounded-xl shadow-md p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                {item.status === "pending" && (
+                  <button onClick={() => onReduce(item.order_id, item.id, item.quantity)}
+                    className="px-2 py-1 bg-red-100 text-red-700 text-xs font-black rounded hover:bg-red-200 active:scale-95 transition-all">
+                    −
+                  </button>
+                )}
+                <span className="px-2 py-1 bg-primary-100 text-primary-700 text-xs font-black rounded">
+                  {item.quantity}x
+                </span>
+                <div className="flex flex-col">
+                  <h3 className="font-black text-gray-800">{item.name}</h3>
+                  {item.size_name && <span className="text-xs text-primary-600 font-bold">Size: {item.size_name}</span>}
                 </div>
               </div>
-              {(first.toppings || []).length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {first.toppings.map((top, i) => <span key={i} className="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">+{top}</span>)}
-                </div>
-              )}
-              {first.notes && <div className="text-xs px-2 py-1 bg-yellow-50 text-yellow-700 border-l-2 border-yellow-400 rounded mb-2">💬 {first.notes}</div>}
-              <div className="text-right text-primary-600 font-bold text-lg">{formatVND(first.price * totalQty)}</div>
+              <div className="flex items-center space-x-2">
+                {statusBadge(item.status)}
+                {item.status === "pending" && (
+                  <button onClick={() => onDelete(item.order_id, item.id)}
+                    className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Hủy món">
+                    🗑
+                  </button>
+                )}
+              </div>
             </div>
-          );
-        })}
+            {item.toppings && item.toppings.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {item.toppings.map((topping, i) => (
+                  <span key={i} className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded">+{topping}</span>
+                ))}
+              </div>
+            )}
+            {item.notes && (
+              <div className="mt-2 p-2 bg-yellow-50 border-l-2 border-yellow-400 rounded-r">
+                <p className="text-xs text-yellow-700 font-medium flex items-start">
+                  <span className="mr-1">💬</span>
+                  <span>{item.notes}</span>
+                </p>
+              </div>
+            )}
+            <div className="text-right mt-2 font-black text-gray-800">{item.total_price.toLocaleString()}đ</div>
+          </div>
+        ))}
       </div>
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-primary-600 to-primary-700 p-6 shadow-2xl">
-        <div className="max-w-2xl mx-auto text-center">
-          <p className="text-white text-sm mb-1">{items.length} món đang chờ</p>
-          <p className="text-white text-4xl font-black">{formatVND(total)}</p>
+      <div className="sticky bottom-0 bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl shadow-2xl p-6 mt-4">
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="text-xs text-primary-100 font-bold uppercase tracking-wide">Tổng cộng</p>
+            <p className="text-sm text-primary-200 mt-1">{items.length} món đang chờ</p>
+          </div>
+          <div className="text-right">
+            <p className="text-4xl font-black text-white">{total.toLocaleString()}đ</p>
+          </div>
         </div>
       </div>
     </div>
@@ -746,6 +869,7 @@ function PublicMenuView({ tableId, onLogout }) {
   const [products, setProducts] = useState([]);
   const [toppings, setToppings] = useState([]);
   const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [facebookUrl, setFacebookUrl] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState(() => {
@@ -809,6 +933,7 @@ function PublicMenuView({ tableId, onLogout }) {
         setProducts(prods);
         setToppings(tops);
         setFeaturedProducts((menuRes.products || []).filter((p) => fp.includes(p.id)));
+        setFacebookUrl(settingsRes.facebook_url || "");
         setLoading(false);
       } catch (err) {
         setError(err.message || "Không thể tải menu");
@@ -924,6 +1049,11 @@ function PublicMenuView({ tableId, onLogout }) {
 
   const updateNotes = (tempId, notes) => {
     setCart(cart.map((it) => it.tempId === tempId ? { ...it, notes: notes || "" } : it));
+    newRequestToken();
+  };
+
+  const removeItem = (tempId) => {
+    setCart(cart.filter((it) => it.tempId !== tempId));
     newRequestToken();
   };
 
@@ -1080,46 +1210,53 @@ function PublicMenuView({ tableId, onLogout }) {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-32">
-      <header className="sticky top-0 z-10 bg-primary-600 text-white shadow-md">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          <div className="text-xs text-primary-100 mb-1">📍 {table?.name || ""}</div>
-          <h1 className="text-2xl font-black">{storeName}</h1>
+      <header className="bg-primary-600 text-white p-4 sticky top-0 z-10 shadow-lg">
+        <div className="max-w-4xl mx-auto">
+          {table?.name && <p className="text-primary-100 font-bold">{table.name}</p>}
+          <div className="relative mt-3">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60">🔍</span>
+            <input
+              type="text"
+              placeholder="Tìm kiếm món..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              data-focus-key="public-search"
+              className="w-full pl-10 pr-10 py-2 rounded-full bg-white/20 text-white placeholder-white/60 text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 hover:text-white text-lg font-bold">
+                ×
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
-      <div className="sticky-top-72 bg-white border-b">
-        <div className="max-w-4xl mx-auto px-4 flex gap-4">
+      <div className="sticky top-[72px] bg-white border-b z-10">
+        <div className="max-w-4xl mx-auto flex">
           <button onClick={() => setActiveView("menu")}
-            className={`py-3 px-2 border-b-2 font-bold text-sm transition ${activeView === "menu" ? "border-primary-600 text-primary-600" : "border-transparent text-gray-600 hover:text-gray-900"}`}>
+            className={`flex-1 py-3 font-black text-sm transition ${activeView === "menu" ? "text-primary-600 border-b-2 border-primary-600" : "text-gray-500"}`}>
             MENU
           </button>
           <button onClick={() => setActiveView("myorder")}
-            className={`py-3 px-2 border-b-2 font-bold text-sm transition ${activeView === "myorder" ? "border-primary-600 text-primary-600" : "border-transparent text-gray-600 hover:text-gray-900"}`}>
-            MÓN ĐÃ CHỌN {myItems.length > 0 ? `(${myItems.length})` : ""}
+            className={`flex-1 py-3 font-black text-sm transition flex items-center justify-center space-x-2 ${activeView === "myorder" ? "text-primary-600 border-b-2 border-primary-600" : "text-gray-500"}`}>
+            <span>📋</span>
+            <span>MÓN ĐÃ CHỌN</span>
           </button>
         </div>
       </div>
 
       {activeView === "menu" ? (
         <>
-          <div className="sticky-top-120 bg-white border-b p-3">
-            <div className="max-w-4xl mx-auto">
-              <input type="search" placeholder="🔍 Tìm món..." value={searchQuery} data-focus-key="public-search"
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2 rounded-full border border-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="bg-white border-b p-3">
-            <div className="max-w-4xl mx-auto flex gap-2 overflow-x-auto">
+          <div className="sticky top-[120px] bg-white border-b z-10">
+            <div className="max-w-4xl mx-auto flex flex-wrap gap-2 p-3">
               <button onClick={() => setSelectedCategory(null)}
-                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition ${selectedCategory === null ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+                className={`px-3 py-1.5 rounded-full font-bold text-xs transition ${selectedCategory === null ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-700"}`}>
                 Tất cả
               </button>
               {categories.map((c) => (
                 <button key={c.id} onClick={() => setSelectedCategory(c.id)}
-                  className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition ${selectedCategory === c.id ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+                  className={`px-3 py-1.5 rounded-full font-bold text-xs transition ${selectedCategory === c.id ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-700"}`}>
                   {c.name}
                 </button>
               ))}
@@ -1130,38 +1267,44 @@ function PublicMenuView({ tableId, onLogout }) {
             {filtered.length === 0 ? (
               <div className="text-center py-16 text-gray-400">Không có sản phẩm</div>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {filtered.map((p) => {
                   const hasSizes = p.sizes && p.sizes.length > 0;
                   return (
-                    <button key={p.id} onClick={() => addToCart(p)}
-                      className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden text-left hover:shadow-lg transition">
-                      <div className="aspect-square bg-gray-100 overflow-hidden">
-                        {p.image_url
-                          ? <img src={p.image_url} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center text-3xl">🍽️</div>}
+                    <div key={p.id} onClick={() => addToCart(p)}
+                      className="bg-white rounded-lg shadow-sm overflow-hidden cursor-pointer active:scale-95 transition-transform">
+                      <div className="relative w-full bg-gray-50" style={{paddingBottom: "100%"}}>
+                        {p.image_url ? (
+                          <img src={p.image_url} alt={p.name} loading="lazy" decoding="async"
+                            className="absolute inset-0 w-full h-full object-cover" />
+                        ) : (
+                          <div className="absolute inset-0 w-full h-full bg-gray-100 flex items-center justify-center">
+                            <span className="text-gray-400 text-2xl">🍽️</span>
+                          </div>
+                        )}
                       </div>
                       <div className="p-2">
-                        <h3 className="font-semibold text-xs text-gray-800 line-clamp-2 mb-1 min-h-[2rem]">{p.name}</h3>
-                        <div className="flex items-center justify-between">
-                          <span className="text-primary-600 font-bold text-sm">
-                            {hasSizes ? `Từ ${formatVND(Math.min(...p.sizes.map((s) => s.price)))}` : formatVND(p.price)}
-                          </span>
-                          <span className="w-6 h-6 rounded-full bg-primary-600 text-white text-xs flex items-center justify-center">+</span>
-                        </div>
+                        <h3 className="font-bold text-xs text-gray-800 line-clamp-2 leading-tight">{p.name}</h3>
+                        <p className="text-primary-600 font-black text-sm mt-1">
+                          {hasSizes ? "Từ " + Math.min(...p.sizes.map(s => s.price)).toLocaleString() + "đ" : p.price.toLocaleString() + "đ"}
+                        </p>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
             )}
           </main>
 
-          {cartCount > 0 && (
+          {cart.length > 0 && (
             <button onClick={() => setShowCartModal(true)}
-              className="fixed bottom-4 right-4 bg-primary-600 hover:bg-primary-700 text-white rounded-full p-4 shadow-2xl z-30 flex items-center gap-2 animate-pulse-ring animate-bounce-slow">
+              className="fixed bottom-4 right-4 bg-primary-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 font-black z-20 animate-bounce-slow"
+              style={{boxShadow: "0 0 20px rgba(59, 130, 246, 0.5)", animation: "bounce 2s infinite, pulse-ring 1.5s ease-out infinite"}}>
               <span className="text-2xl animate-wiggle">🛒</span>
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-bold">{cartCount}</span>
+              <div className="flex flex-col items-start">
+                <span className="text-xs text-primary-200">{cart.length} món</span>
+                <span className="text-sm">{cartTotal.toLocaleString()}đ</span>
+              </div>
             </button>
           )}
         </>
@@ -1172,6 +1315,7 @@ function PublicMenuView({ tableId, onLogout }) {
       {showCartModal && (
         <CartModal cart={cart} total={cartTotal} onClose={() => setShowCartModal(false)}
           onUpdateQty={updateQty} onEdit={(tempId) => { setEditItemTempId(tempId); setShowEditModal(true); }}
+          onRemove={removeItem}
           onSubmit={submitOrder} isOrdering={isOrdering} orderSuccess={orderSuccess}
         />
       )}
@@ -1185,7 +1329,7 @@ function PublicMenuView({ tableId, onLogout }) {
           onUpdateNotes={(notes) => updateNotes(editItem.tempId, notes)}
         />
       )}
-      {showWelcome && <WelcomeOverlay onDismiss={dismissWelcome} storeName={storeName} featuredProducts={featuredProducts} step={welcomeStep} />}
+      {showWelcome && <WelcomeOverlay onDismiss={dismissWelcome} storeName={storeName} featuredProducts={featuredProducts} step={welcomeStep} facebookUrl={facebookUrl} />}
 
       {toasts.length > 0 && (
         <div className="fixed top-4 right-4 z-50 space-y-2">
