@@ -238,8 +238,17 @@ function PosApp({ user, onLogout }) {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 font-sans text-gray-900">
-      <header className="bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between">
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
+      <aside className="hidden md:flex flex-col items-center py-6 bg-white border-r shadow-sm w-20">
+        <button className="w-12 h-12 rounded-xl bg-red-600 text-white flex items-center justify-center text-2xl shadow-md" title="POS">🛒</button>
+        <div className="mt-8 flex-1 flex flex-col items-center gap-3">
+          <button className="w-12 h-12 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center text-2xl hover:bg-gray-200" title="Bếp">👨‍🍳</button>
+          <button className="w-12 h-12 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center text-2xl hover:bg-gray-200" title="Pha chế">🥤</button>
+        </div>
+        <button className="w-12 h-12 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center text-2xl hover:bg-gray-200" title="Cài đặt">⚙️</button>
+      </aside>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg">☕</div>
           <div>
@@ -248,9 +257,7 @@ function PosApp({ user, onLogout }) {
           </div>
         </div>
         <nav className="flex gap-2">
-          <button onClick={() => setView("tables")}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition ${view === "tables" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}>🪑 Bàn</button>
-          <button onClick={() => { setView("orders"); loadOrders(); }}
+          <button onClick={() => setView("orders")}
             className={`px-4 py-2 rounded-lg font-medium text-sm transition ${view === "orders" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}>📋 Đơn hàng</button>
         </nav>
         <div className="flex items-center gap-3">
@@ -263,31 +270,40 @@ function PosApp({ user, onLogout }) {
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {view === "tables" && (
             <>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold">Sơ đồ bàn</h2>
-                <div className="text-sm text-gray-500">
-                  {tables.filter(t => t.status === 'empty').length} trống / {tables.filter(t => t.status === 'occupied').length} có khách
-                </div>
+              <div className="flex gap-2 mb-6">
+                <button className="px-5 py-2 rounded-full bg-red-600 text-white font-bold text-sm shadow-sm">🪑 Sơ đồ bàn</button>
+                <button className="px-5 py-2 rounded-full bg-white border border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50">📦 Mang về</button>
+                <button className="px-5 py-2 rounded-full bg-white border border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50">🚚 Ship</button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div className="grid md:grid-cols-5 gap-4">
+                <button onClick={() => { setSelectedTable({ id: 0, name: "Mang về", status: "takeaway" }); setCart([]); setView("menu"); }}
+                  className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-5 text-left hover:border-orange-500 transition relative">
+                  <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-orange-500"></div>
+                  <div className="font-black text-orange-600 text-base mb-3">ORDER NHANH</div>
+                  <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center mb-3">
+                    <span className="text-2xl">🛒</span>
+                  </div>
+                  <div className="text-xs text-orange-600 font-semibold tracking-wider">MANG VỀ / TẠI QUẦY</div>
+                </button>
                 {tables.map((t) => {
                   const occupied = t.status === "occupied";
+                  const isSelected = selectedTable?.id === t.id;
                   return (
                     <button key={t.id}
                       onClick={() => { setSelectedTable(t); setCart([]); setSelectedCategory(null); setView("menu"); }}
-                      className={`p-4 rounded-2xl border-2 text-left transition hover:scale-[1.02] ${
-                        occupied ? "bg-red-50 border-red-300 hover:border-red-500" : "bg-emerald-50 border-emerald-300 hover:border-emerald-500"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-bold text-lg">{t.name}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold text-white ${occupied ? "bg-red-500" : "bg-emerald-500"}`}>
-                          {occupied ? "Có khách" : "Trống"}
-                        </span>
-                      </div>
-                      {occupied && t.pending_order
-                        ? <div className="text-sm text-red-700 font-semibold">Tạm tính: {formatVND(t.pending_order.total)}</div>
-                        : <div className="text-sm text-emerald-700">Sẵn sàng order</div>}
+                      className={`bg-white border-2 rounded-2xl p-5 text-left transition relative ${
+                        isSelected ? "border-red-500 shadow-md" : occupied ? "border-red-200 hover:border-red-400" : "border-gray-200 hover:border-gray-400"
+                      }`}>
+                      <div className={`absolute top-3 right-3 w-3 h-3 rounded-full ${occupied ? "bg-red-400" : "bg-gray-300"}`}></div>
+                      <div className={`font-black text-base mb-3 ${isSelected ? "text-red-600" : "text-blue-900"}`}>{t.name}</div>
+                      {occupied && t.pending_order ? (
+                        <div className="space-y-1">
+                          <div className="text-xs font-bold px-2 py-0.5 bg-red-100 text-red-600 rounded inline-block">{formatVND(t.pending_order.total)}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-1"><span>⏱</span><span>DÙNG 24PH</span></div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400">{occupied ? "Đang phục vụ" : "Bàn trống"}</div>
+                      )}
                     </button>
                   );
                 })}
@@ -455,6 +471,7 @@ function PosApp({ user, onLogout }) {
       )}
 
       {toast && <div className="fixed top-20 right-4 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm font-medium">{toast}</div>}
+      </div>
     </div>
   );
 }
