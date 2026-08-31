@@ -11,8 +11,8 @@ binding = "ASSETS"
 # D1 database - binding tên DB sẽ thay bằng ID thật sau khi wrangler d1 create
 [[d1_databases]]
 binding = "DB"
-database_name = "pos-demo-db"
-database_id = "REPLACE_AFTER_WRANGLER_D1_CREATE"
+database_name = "pos-free"
+database_id = "9dd2600b-5b43-4976-baf5-5c86d1c74748"
 
 [vars]
 STORE_NAME = "Quán Cà Phê Demo"

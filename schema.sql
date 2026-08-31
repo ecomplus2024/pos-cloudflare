@@ -1,6 +1,5 @@
 -- Schema cho POS demo trên Cloudflare D1
--- Port từ models.py: Category + Product
--- Multi-store: thêm store_id (mặc định 1 store cho demo)
+-- Port từ models.py: Category, Product, Table, Order, OrderItem
 
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +24,46 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_store ON products(store_id);
 
+-- Bàn (phục vụ cashier chọn bàn trước khi order)
+CREATE TABLE IF NOT EXISTS tables (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL DEFAULT 1,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'empty',
+  current_order_id INTEGER
+);
+
+-- Orders (đơn hàng của bàn hoặc takeaway/ship)
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  store_id INTEGER NOT NULL DEFAULT 1,
+  table_id INTEGER,
+  order_type TEXT NOT NULL DEFAULT 'dine_in',
+  total INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payment_method TEXT,
+  customer_name TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (table_id) REFERENCES tables(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_table ON orders(table_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+
+-- Order items (từng món trong đơn)
+CREATE TABLE IF NOT EXISTS order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL,
+  product_id INTEGER NOT NULL,
+  product_name TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  note TEXT,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+
 -- Dữ liệu mẫu tiếng Việt
 INSERT INTO categories (name, sort_order) VALUES
   ('Cà phê', 1),
@@ -41,3 +80,13 @@ INSERT INTO products (category_id, name, price, image_url, available) VALUES
   (3, 'Nước ép cam', 35000, 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400', 1),
   (3, 'Sinh tố bơ', 45000, 'https://images.unsplash.com/photo-1623065422902-30a2d299bbe4?w=400', 0),
   (4, 'Bánh croissant', 25000, 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400', 1);
+
+INSERT INTO tables (name, status) VALUES
+  ('Bàn 1', 'empty'),
+  ('Bàn 2', 'empty'),
+  ('Bàn 3', 'occupied'),
+  ('Bàn 4', 'empty'),
+  ('Bàn 5', 'empty'),
+  ('Bàn 6', 'empty'),
+  ('Bàn 7', 'occupied'),
+  ('Bàn 8', 'empty');
