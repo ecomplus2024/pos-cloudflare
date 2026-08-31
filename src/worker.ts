@@ -84,6 +84,96 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+// ===================== CACHE HELPERS =====================
+// Single-flight dedup: nếu 50 cashier cùng gọi /api/menu trong 50ms,
+// chỉ 1 promise thực sự fetch D1, các request khác await cùng promise.
+const inflight = new Map<string, Promise<unknown>>();
+
+async function coalesce<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const existing = inflight.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = fetcher().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+// Cache API với stale-while-revalidate
+// ttl: giây cache fresh, swr: giây cho phép serve stale trong khi refresh background
+async function withCache(
+  request: Request,
+  ttlSeconds: number,
+  swrSeconds: number,
+  fetcher: () => Promise<Response>
+): Promise<Response> {
+  const cache = caches.default;
+  const cached = await cache.match(request);
+
+  if (cached) {
+    const storedAt = parseInt(cached.headers.get("x-cached-at") || "0", 10);
+    const ageMs = Date.now() - storedAt;
+    const ttlMs = ttlSeconds * 1000;
+    const swrMs = swrSeconds * 1000;
+
+    // Fresh: trả luôn
+    if (ageMs < ttlMs) {
+      const h = new Headers(cached.headers);
+      h.set("x-cache", "HIT");
+      return new Response(cached.body, { status: cached.status, headers: h });
+    }
+
+    // Stale trong SWR window: trả stale + refresh background
+    if (swrSeconds > 0 && ageMs < ttlMs + swrMs) {
+      const ctx: ExecutionContext | undefined = (request as Request & { ctx?: ExecutionContext }).ctx;
+      if (ctx) {
+        ctx.waitUntil(
+          fetcher().then((resp) => cache.put(request, stampCache(resp, ttlSeconds)))
+        );
+      } else {
+        // Fallback: refresh non-blocking (no ctx available)
+        fetcher().then((resp) => cache.put(request, stampCache(resp, ttlSeconds))).catch(() => {});
+      }
+      const h = new Headers(cached.headers);
+      h.set("x-cache", "STALE");
+      return new Response(cached.body, { status: cached.status, headers: h });
+    }
+
+    // Quá cũ: xóa cache cũ, fetch mới
+    await cache.delete(request);
+  }
+
+  // MISS - fetch từ origin
+  const fresh = await fetcher();
+  // Chỉ cache 2xx responses
+  if (fresh.status >= 200 && fresh.status < 300) {
+    await cache.put(request, stampCache(fresh.clone(), ttlSeconds));
+  }
+  const h = new Headers(fresh.headers);
+  h.set("x-cache", "MISS");
+  return new Response(fresh.body, { status: fresh.status, headers: h });
+}
+
+function stampCache(resp: Response, ttl: number): Response {
+  const h = new Headers(resp.headers);
+  h.set("Cache-Control", `public, max-age=${ttl}, s-maxage=${ttl}`);
+  h.set("x-cached-at", String(Date.now()));
+  return new Response(resp.body, { status: resp.status, headers: h });
+}
+
+// Cache headers cho static assets dựa trên extension
+function staticAssetCacheHeaders(pathname: string): string {
+  if (pathname.endsWith(".css") || pathname.endsWith(".js")) {
+    // Versioned qua query/hash, immutable 1 năm
+    return "public, max-age=31536000, immutable";
+  }
+  if (pathname.endsWith(".html") || pathname === "/" || pathname === "") {
+    return "public, max-age=60, s-maxage=300";
+  }
+  if (pathname.endsWith(".png") || pathname.endsWith(".jpg") || pathname.endsWith(".svg") || pathname.endsWith(".ico")) {
+    return "public, max-age=86400";
+  }
+  return "public, max-age=300";
+}
+
 // SHA-256 hash với salt, trả về hex string
 async function sha256Hex(input: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -362,13 +452,21 @@ export default {
     }
 
     if (url.pathname === "/api/menu") {
-      try { return await handleMenu(env); }
-      catch (err) { return json({ error: String(err) }, 500); }
+      // Menu ít thay đổi - cache 5 phút, không SWR
+      const req = new Request(request.url, { method: "GET" });
+      return await withCache(req, 300, 0, async () => {
+        try { return await handleMenu(env); }
+        catch (err) { return json({ error: String(err) }, 500); }
+      });
     }
 
     if (url.pathname === "/api/tables") {
-      try { return await handleTables(env); }
-      catch (err) { return json({ error: String(err) }, 500); }
+      // Tables thay đổi thường xuyên - 10s fresh + 30s stale-while-revalidate
+      const req = new Request(request.url, { method: "GET" });
+      return await withCache(req, 10, 30, async () => {
+        try { return await handleTables(env); }
+        catch (err) { return json({ error: String(err) }, 500); }
+      });
     }
 
     const payMatch = url.pathname.match(/^\/api\/tables\/(\d+)\/pay$/);
@@ -376,7 +474,14 @@ export default {
       try {
         const tableId = parseInt(payMatch[1], 10);
         const body = (await request.json()) as { payment_method?: string };
-        return await handlePayTable(env, tableId, body.payment_method ?? "cash");
+        const resp = await handlePayTable(env, tableId, body.payment_method ?? "cash");
+        // Invalidate caches
+        const cache = caches.default;
+        await Promise.all([
+          cache.delete(new Request(url.origin + "/api/tables", { method: "GET" })),
+          cache.delete(new Request(url.origin + "/api/orders", { method: "GET" })),
+        ]);
+        return resp;
       } catch (err) {
         return json({ error: String(err) }, 500);
       }
@@ -384,19 +489,35 @@ export default {
 
     if (url.pathname === "/api/orders") {
       if (request.method === "GET") {
-        try { return await handleGetOrders(env); }
-        catch (err) { return json({ error: String(err) }, 500); }
+        // Orders: 30s fresh + 60s SWR (cho dashboard)
+        const req = new Request(request.url, { method: "GET" });
+        return await withCache(req, 30, 60, async () => {
+          try { return await handleGetOrders(env); }
+          catch (err) { return json({ error: String(err) }, 500); }
+        });
       }
       if (request.method === "POST") {
         try {
           const body = (await request.json()) as CreateOrderInput;
-          return await handleCreateOrder(env, body);
+          const resp = await handleCreateOrder(env, body);
+          // Invalidate caches sau khi tạo order thành công
+          const cache = caches.default;
+          await Promise.all([
+            cache.delete(new Request(request.url.replace(/\/api\/orders.*/, "/api/tables"), { method: "GET" })),
+            cache.delete(new Request(request.url.replace(/\/api\/orders.*/, "/api/orders"), { method: "GET" })),
+          ]);
+          return resp;
         } catch (err) {
           return json({ error: String(err) }, 400);
         }
       }
     }
 
-    return env.ASSETS.fetch(request);
+    // Static assets: thêm Cache-Control headers
+    const assetResp = await env.ASSETS.fetch(request);
+    const cc = staticAssetCacheHeaders(url.pathname);
+    const headers = new Headers(assetResp.headers);
+    headers.set("Cache-Control", cc);
+    return new Response(assetResp.body, { status: assetResp.status, headers });
   },
 };
