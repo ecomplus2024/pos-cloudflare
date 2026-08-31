@@ -1,0 +1,18 @@
+{
+  "name": "cf-pos-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create pos-demo-db",
+    "db:init": "wrangler d1 execute pos-demo-db --file=./schema.sql --remote",
+    "db:init:local": "wrangler d1 execute pos-demo-db --file=./schema.sql",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240919.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^3.78.0"
+  }
+}
