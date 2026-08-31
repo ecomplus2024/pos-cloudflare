@@ -920,8 +920,8 @@ function PublicMenuView({ tableId, onLogout }) {
     (async () => {
       try {
         const [menuRes, settingsRes] = await Promise.all([
-          fetch(`/api/public/menu/${tableId}`).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
-          fetch(`/api/settings`).then((r) => r.ok ? r.json() : {}),
+          fetch(`/api/public/menu/${tableId}?_=${Date.now()}`).then((r) => r.ok ? r.json() : Promise.reject(r.status)),
+          fetch(`/api/settings?_=${Date.now()}`).then((r) => r.ok ? r.json() : {}),
         ]);
         const prods = (menuRes.products || []).filter((p) => !p.is_topping);
         const tops = (menuRes.products || []).filter((p) => p.is_topping);
@@ -947,7 +947,7 @@ function PublicMenuView({ tableId, onLogout }) {
     let cancelled = false;
     const poll = async () => {
       try {
-        const r = await fetch(`/api/public/table-state/${tableId}`);
+        const r = await fetch(`/api/public/table-state/${tableId}?_=${Date.now()}`);
         if (!r.ok || cancelled) return;
         const data = await r.json();
         setTableState((prev) => {
@@ -979,7 +979,7 @@ function PublicMenuView({ tableId, onLogout }) {
     let cancelled = false;
     const poll = async () => {
       try {
-        const r = await fetch(`/api/public/items/${tableId}`);
+        const r = await fetch(`/api/public/items/${tableId}?_=${Date.now()}`);
         if (!r.ok || cancelled) return;
         const data = await r.json();
         setMyItems(Array.isArray(data) ? data : []);
