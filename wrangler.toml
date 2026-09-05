@@ -15,4 +15,4 @@ database_name = "pos-free"
 database_id = "9dd2600b-5b43-4976-baf5-5c86d1c74748"
 
 [vars]
-STORE_NAME = "Quán Cà Phê Demo"
+STORE_NAME = "POS"

@@ -567,7 +567,7 @@ async function handleKitchenOrders(env, unit) {
   for (const order of ordersResult.results) {
     const itemsResult = await env.DB.prepare(
       `SELECT oi.id, oi.product_id, oi.product_name, oi.quantity, oi.note, oi.status, oi.size_name,
-              p.production_unit
+              oi.reported_at, p.production_unit
        FROM order_items oi
        LEFT JOIN products p ON p.id = oi.product_id
        WHERE oi.order_id = ? AND oi.status != 'completed'
@@ -613,7 +613,9 @@ async function handleKitchenOrders(env, unit) {
       toppings: toppingsByItem.get(it.id) || [],
       is_voice_order: false,
       // Voice orders not supported in Worker yet
-      voice_url: null
+      voice_url: null,
+      // Mốc đếm thời gian trên màn hình bếp/quầy: thời điểm báo chế biến
+      reported_at: it.reported_at || order.created_at
     }));
     results.push({
       id: order.id,

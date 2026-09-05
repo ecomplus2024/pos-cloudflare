@@ -108,7 +108,7 @@ function setPublicState(patch) {
 
 // ============ MOCK fallback (cashier only) ============
 const MOCK = {
-  store_name: "Quán Cà Phê Demo",
+  store_name: "POS",
   categories: [
     { id: 1, name: "Cà phê" }, { id: 2, name: "Trà sữa" },
     { id: 3, name: "Nước ép" }, { id: 4, name: "Bánh ngọt" },
@@ -216,27 +216,6 @@ function PosApp() {
   const cartCount = state.cart.reduce((s, it) => s + it.qty, 0);
 
   const wrap = h("div", { className: "flex flex-col h-screen bg-gray-50 font-sans text-gray-900" });
-  const header = h("header", { className: "bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between" },
-    h("div", { className: "flex items-center gap-3" },
-      h("div", { className: "w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg" }, "☕"),
-      h("div", {},
-        h("div", { className: "font-bold text-gray-900" }, state.storeName),
-        h("div", { className: "text-xs text-gray-500" }, state.usingMock ? "Preview mode" : `Xin chào ${state.user.full_name || state.user.username}`),
-      ),
-    ),
-    h("nav", { className: "flex gap-2" },
-      h("button", { onclick: () => setState({ view: "tables" }),
-        className: `px-4 py-2 rounded-lg font-medium text-sm transition ${state.view === "tables" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}` }, "🪑 Bàn"),
-      h("button", { onclick: () => { setState({ view: "orders" }); loadOrders(); },
-        className: `px-4 py-2 rounded-lg font-medium text-sm transition ${state.view === "orders" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}` }, "📋 Đơn hàng"),
-    ),
-    h("div", { className: "flex items-center gap-3" },
-      h("div", { className: "text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium" }, "● Online"),
-      h("button", { onclick: handleLogout, className: "text-xs px-3 py-1 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200" }, "🚪 Đăng xuất"),
-    ),
-  );
-  wrap.appendChild(header);
-
   const main = h("div", { className: "flex-1 flex overflow-hidden" });
   const leftPane = h("div", { className: "flex-1 overflow-y-auto p-4 md:p-6" });
 

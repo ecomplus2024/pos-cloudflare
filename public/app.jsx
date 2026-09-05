@@ -112,7 +112,7 @@ function Icon({ name, className = "", strokeWidth = 2 }) {
 }
 
 const MOCK_MENU = {
-  store_name: "Quán Cà Phê Demo",
+  store_name: "POS",
   categories: [
     { id: 1, name: "Cà phê", allow_all_toppings: 1, allowed_toppings: [] },
     { id: 2, name: "Trà sữa", allow_all_toppings: 1, allowed_toppings: [] },
@@ -1045,24 +1045,6 @@ function PosApp({ user, onLogout }) {
         ><Icon name="settings" className="w-5 h-5" /></button>
       </aside>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b shadow-sm px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white"><Icon name="coffee" className="w-5 h-5" /></div>
-          <div>
-            <div className="font-bold text-gray-900">{storeName}</div>
-            <div className="text-xs text-gray-500">{usingMock ? "Preview mode" : `Xin chào ${user.full_name || user.username}`}</div>
-          </div>
-        </div>
-        <nav className="flex gap-2">
-          <button onClick={() => setView("orders")}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition flex items-center gap-2 ${view === "orders" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"}`}><Icon name="clipboard-list" className="w-4 h-4" /> Đơn hàng</button>
-        </nav>
-        <div className="flex items-center gap-3">
-          <div className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">● Online</div>
-          <button onClick={onLogout} className="text-xs px-3 py-1 rounded-lg bg-red-100 text-red-700 font-medium hover:bg-red-200 flex items-center gap-1"><Icon name="log-out" className="w-3.5 h-3.5" /> Đăng xuất</button>
-        </div>
-      </header>
-
       <div className="flex-1 flex overflow-hidden">
         {(view === "kitchen" || view === "counter") && (
           <KitchenView unit={view} fill="fill" onLogout={onLogout} />
@@ -2776,7 +2758,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
         order_type: order.order_type,
         display_code: order.display_code,
         is_self_order: !!order.is_self_order,
-        created_at: order.created_at,
+        // Mốc đếm thời gian = thời điểm món được báo chế biến
+        created_at: item.reported_at || order.created_at,
       };
       if (item.status === "pending") pendingItems.push(enriched);
       else if (item.status === "processing") processingItems.push(enriched);
@@ -2817,16 +2800,25 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
 
   const activeItems = activeTab === "pending" ? displayPending : displayProcessing;
 
-  // I4 fix: Client-side countdown timer using created_at for order age display
+  // I4 fix: Client-side timer cho đồng hồ "đã báo chế biến bao lâu"
   const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => {
-    const interval = setInterval(() => setNowTick(Date.now()), 30000); // Update every 30s
+    const interval = setInterval(() => setNowTick(Date.now()), 10000); // Update every 10s
     return () => clearInterval(interval);
   }, []);
 
   const getTimeDiff = (timeStr) => {
     if (!timeStr) return null;
-    const diff = Math.floor((nowTick - new Date(timeStr).getTime()) / 60000);
+    // SQLite datetime('now') lưu UTC không có đuôi múi giờ — phải coi là UTC,
+    // nếu không trình duyệt sẽ hiểu nhầm là giờ địa phương và đếm sai.
+    let ms;
+    if (typeof timeStr === "string" && !timeStr.endsWith("Z") && !timeStr.includes("+")) {
+      ms = new Date(timeStr.replace(" ", "T") + "Z").getTime();
+    } else {
+      ms = new Date(timeStr).getTime();
+    }
+    if (!Number.isFinite(ms)) return null;
+    const diff = Math.floor((nowTick - ms) / 60000);
     if (diff < 1) return "Vừa xong";
     if (diff < 60) return `${diff} phút`;
     return `${Math.floor(diff / 60)}h${diff % 60}p`;
@@ -4426,7 +4418,6 @@ function ShipperPortalView() {
   const [activeTab, setActiveTab] = useState("pending");
   const [isConnected, setIsConnected] = useState(true);
   const [processingOrderId, setProcessingOrderId] = useState(null);
-  const storeName = "Quán Cà Phê Demo";
 
   const fetchPendingOrders = async () => {
     try {
@@ -4505,35 +4496,8 @@ function ShipperPortalView() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="font-bold text-lg text-orange-800">Đơn Ship</h1>
-            <p className="text-xs text-gray-500">{storeName}</p>
-          </div>
-          <div className="flex items-center space-x-3">
-            {isConnected ? (
-              <span className="flex items-center space-x-1 text-gray-500 text-xs">
-                <Icon name="wifi" className="w-3.5 h-3.5" />
-                <span>Online</span>
-              </span>
-            ) : (
-              <span className="flex items-center space-x-1 text-red-500 text-xs">
-                <Icon name="wifi-off" className="w-3.5 h-3.5" />
-                <span>Offline</span>
-              </span>
-            )}
-            <button onClick={() => { fetchPendingOrders(); fetchTransferOrders(); }}
-              className="p-1.5 text-gray-500 hover:text-orange-800 transition-colors">
-              <Icon name="refresh-cw" className={`w-4 h-4 ${!isConnected ? "animate-spin" : ""}`} />
-            </button>
-          </div>
-        </div>
-      </header>
-
       {/* Content */}
-      <main className="max-w-lg mx-auto p-2">
+      <main className="max-w-lg mx-auto p-2 pt-4">
         {/* Tab Bar */}
         <div className="flex border-b border-gray-200 mb-4">
           <button onClick={() => setActiveTab("pending")}

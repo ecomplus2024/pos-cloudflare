@@ -79,6 +79,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(customer_session_id);
 
 -- Order items (từng món trong đơn)
+-- reported_at: thời điểm món được "báo chế biến" (INSERT), dùng làm
+-- mốc cho đồng hồ đếm thời gian trên màn hình bếp/quầy
 CREATE TABLE IF NOT EXISTS order_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   order_id INTEGER NOT NULL,
@@ -89,6 +91,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   note TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   size_name TEXT,
+  reported_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 );
 
