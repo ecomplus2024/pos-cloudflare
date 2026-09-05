@@ -119,6 +119,56 @@ async function handleLogout(env, token) {
   await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
   return json({ success: true });
 }
+// Lightweight change-detection key for polling optimization.
+// Returns a single "key" string derived from the latest IDs and state hashes
+// of the relevant tables. Client compares the key string between polls — if
+// unchanged, no full data fetch is needed.
+async function handleChanges(env, ctx, unit) {
+  if (ctx === "kitchen") {
+    // Kitchen: order_items filtered by production_unit + order_item_change_logs (cancellations)
+    const [itemResult, eventResult] = await Promise.all([
+      env.DB.prepare(
+        `SELECT oi.id, oi.status FROM order_items oi
+         JOIN products p ON p.id = oi.product_id
+         JOIN orders o ON o.id = oi.order_id
+         WHERE o.status = 'pending' AND p.production_unit = ?
+         ORDER BY oi.id`
+      ).bind(unit).all(),
+      env.DB.prepare(
+        `SELECT MAX(id) as max_id FROM order_item_change_logs
+         WHERE production_unit = ? AND created_at >= datetime('now', '-12 hours')`
+      ).bind(unit).first(),
+    ]);
+    const itemsSig = (itemResult.results || []).map((r) => `${r.id}:${r.status}`).join(",");
+    const maxItemId = (itemResult.results || []).reduce((m, r) => Math.max(m, r.id), 0);
+    const maxEventId = eventResult?.max_id ?? 0;
+    const key = `k:${unit}:${maxItemId}:${maxEventId}:${itemsSig}`;
+    return json({ key });
+  }
+  // Default / tables context: tables, orders, order_items, staff_calls
+  const todayStart = new Date().toISOString().slice(0, 10);
+  const [tablesResult, ordersResult, itemsResult, callsResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT id, status FROM tables ORDER BY id`
+    ).all(),
+    env.DB.prepare(
+      `SELECT MAX(id) as max_id FROM orders WHERE created_at >= ?`
+    ).bind(todayStart).first(),
+    env.DB.prepare(
+      `SELECT MAX(id) as max_id FROM order_items
+       WHERE order_id IN (SELECT id FROM orders WHERE status = 'pending')`
+    ).first(),
+    env.DB.prepare(
+      `SELECT MAX(id) as max_id FROM staff_calls WHERE created_at >= ?`
+    ).bind(todayStart).first(),
+  ]);
+  const tableSig = (tablesResult.results || []).map((r) => `${r.id}:${r.status}`).join(",");
+  const maxOrderId = ordersResult?.max_id ?? 0;
+  const maxItemId = itemsResult?.max_id ?? 0;
+  const maxCallId = callsResult?.max_id ?? 0;
+  const key = `t:${maxOrderId}:${maxCallId}:${maxItemId}:${tableSig}`;
+  return json({ key });
+}
 async function handleMenu(env) {
   const [categoriesResult, productsResult] = await Promise.all([
     env.DB.prepare("SELECT id, name, sort_order, production_unit, allow_all_toppings FROM categories ORDER BY sort_order, name").all(),
@@ -2386,6 +2436,18 @@ var worker_default = {
       if (!token) return json({ success: false }, 400);
       try {
         return await handleLogout(env, token);
+      } catch (err) {
+        return json({ error: String(err) }, 500);
+      }
+    }
+    // Change detection: lightweight key-based polling (reduces D1 query load)
+    if (url.pathname === "/api/changes" && request.method === "GET") {
+      const auth = await requireAuth(env, request);
+      if (!auth.valid) return auth.error;
+      try {
+        const ctx = url.searchParams.get("ctx") || "all";
+        const unit = url.searchParams.get("unit") || "kitchen";
+        return await handleChanges(env, ctx, unit);
       } catch (err) {
         return json({ error: String(err) }, 500);
       }

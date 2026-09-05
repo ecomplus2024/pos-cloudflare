@@ -373,6 +373,7 @@ function PosApp({ user, onLogout }) {
   const hasInitCategory = useRef(false);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
+  const [showMobileCart, setShowMobileCart] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [usingMock, setUsingMock] = useState(false);
@@ -437,13 +438,29 @@ function PosApp({ user, onLogout }) {
       });
   }, []);
 
-  // Batch 2 Fix 7: polling — refresh tables + staff calls every 5s on tables view
+  // Change-detection polling: lightweight /api/changes check, fetch full only when key changes
   const staffCallsRef = useRef([]);
+  const lastChangesKeyRef = useRef("");
   useEffect(() => {
     if (view !== "tables" && view !== "orders") return;
     let cancelled = false;
     const poll = async () => {
       if (cancelled) return;
+      let shouldFetch = true;
+      try {
+        // Step 1: lightweight change check (~1 D1 query)
+        const changes = await authFetch("/api/changes?ctx=tables");
+        if (changes.key === lastChangesKeyRef.current) {
+          shouldFetch = false; // no change → skip
+        } else {
+          lastChangesKeyRef.current = changes.key;
+        }
+      } catch {
+        // /api/changes failed → always fetch full data as fallback
+      }
+      if (!shouldFetch) return;
+
+      // Step 2: changes detected (or fallback) → fetch full data
       try {
         const tbl = await authFetch("/api/tables");
         if (tbl.server_time) {
@@ -475,13 +492,28 @@ function PosApp({ user, onLogout }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [view, selectedTable?.id]);
 
-  // Batch 2 Fix 9: load orders when entering orders view + auto-refresh every 30s
+  // Orders view: also use change detection (same key covers orders + order_items)
   useEffect(() => {
     if (view !== "orders") return;
-    loadOrders();
-    fetchTakeawayOrders();
-    const interval = setInterval(() => { loadOrders(); fetchTakeawayOrders(); }, 5000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      let shouldFetch = true;
+      try {
+        const changes = await authFetch("/api/changes?ctx=tables");
+        if (changes.key === lastChangesKeyRef.current) {
+          shouldFetch = false;
+        } else {
+          lastChangesKeyRef.current = changes.key;
+        }
+      } catch {}
+      if (!shouldFetch) return;
+      loadOrders();
+      fetchTakeawayOrders();
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [view]);
 
   const showToast = (msg) => {
@@ -826,16 +858,16 @@ function PosApp({ user, onLogout }) {
         payment_method: paymentMethod,
         items: newItems,
       };
-      // Optimistic: snapshot baseline + toast ngay, API chạy nền
+      // Snapshot baseline + gọi API
       setInitialCart(JSON.parse(JSON.stringify(cart)));
       setShowCheckout(false);
-      setSubmitting(false);
       showToast("Đã gửi báo chế biến");
       const data = await authFetch("/api/orders", {
         method: "POST",
         body: JSON.stringify(payload),
       });
       setCurrentOrderId(data.order_id);
+      setSubmitting(false);
       refreshTables();
       loadOrders();
     } catch (err) {
@@ -1283,7 +1315,7 @@ function PosApp({ user, onLogout }) {
               ) : (
                 <>
                   {/* Desktop square grid (aspect-square image, price badge overlay, name uppercase centered) */}
-                  <div className="hidden md:grid grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4 gap-3 px-0">
+                  <div className="hidden md:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 px-0">
                     {filtered.map((p) => {
                       const hasSizes = p.sizes && p.sizes.length > 0;
                       const displayPrice = hasSizes ? Math.min(...p.sizes.map(s => s.price)) : p.price;
@@ -1340,8 +1372,137 @@ function PosApp({ user, onLogout }) {
         </div>
         )}
 
+        {/* Mobile cart floating button */}
+        {view === "menu" && cart.length > 0 && (
+          <button onClick={() => setShowMobileCart(true)}
+            className="md:hidden fixed bottom-4 right-4 bg-primary-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 font-black z-20"
+            style={{boxShadow: "0 0 20px rgba(99,102,241,0.4)", animation: "bounce 2s infinite, pulse-ring 1.5s ease-out infinite"}}>
+            <span className="text-2xl" style={{animation: "wiggle 0.5s ease-in-out"}}><Icon name="shopping-cart" className="w-6 h-6" /></span>
+            <div className="flex flex-col items-start">
+              <span className="text-xs text-primary-200">{cart.reduce((s, it) => s + it.qty, 0)} món</span>
+              <span className="text-sm">{cartTotal.toLocaleString()}đ</span>
+            </div>
+          </button>
+        )}
+
+        {/* Mobile cart bottom sheet overlay */}
+        {view === "menu" && showMobileCart && (
+          <div className="md:hidden fixed inset-0 z-[80] flex items-end" onClick={() => setShowMobileCart(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div className="relative bg-white w-full max-h-[85vh] rounded-t-3xl overflow-hidden flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              {/* Mobile cart header */}
+              <div className="p-3 border-b flex items-center justify-between bg-gray-50">
+                <div className="flex items-center space-x-2">
+                  <div className="bg-primary-50 p-1.5 rounded-xl text-primary-600"><Icon name="shopping-cart" className="w-4 h-4" /></div>
+                  <h3 className="font-bold text-sm text-gray-800">Đơn hàng</h3>
+                  <span className="text-[10px] px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full font-bold">{cart.reduce((s, it) => s + it.qty, 0)} món</span>
+                </div>
+                <button onClick={() => setShowMobileCart(false)} className="p-2 hover:bg-gray-200 rounded-full text-xl"><Icon name="x" className="w-5 h-5" /></button>
+              </div>
+              {/* Mobile cart table/position info */}
+              <div className="px-3 pt-2 pb-1">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-gray-100 bg-gray-50 px-2.5 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider">{selectedTable ? "Bàn phục vụ" : "Đơn hàng"}</p>
+                    <p className="text-xs font-black text-gray-800 truncate">
+                      {selectedTable ? `${selectedTable.name} — Vị trí ${selectedPosition}` : "Tại quầy"}
+                    </p>
+                  </div>
+                  {selectedTable && selectedTable.status !== "takeaway" && (
+                    <div className="flex items-center gap-1">
+                      {["A", "B", "C", "D"].map((pos) => {
+                        const posData = (selectedTable.positions || []).find((p) => p.position === pos);
+                        const isCurrent = pos === selectedPosition;
+                        const isOccupied = posData?.status === "occupied";
+                        return (
+                          <button key={pos} onClick={() => openPosition(pos)}
+                            className={`w-7 h-7 rounded-lg text-[11px] font-black transition-all border ${
+                              isCurrent ? "bg-primary-600 text-white border-primary-600 shadow-sm"
+                                : isOccupied ? "bg-red-50 text-red-600 border-red-300" : "bg-white text-gray-500 border-gray-200"
+                            }`}>{pos}</button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Mobile cart items */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-2 no-scrollbar min-h-0">
+                {cart.length === 0 ? (
+                  <div className="py-8 text-center text-gray-400 text-sm">Chưa có món nào</div>
+                ) : cart.map((it, idx) => (
+                  <div key={cartKey(it)} className="flex space-x-2 group relative">
+                    <div className="w-12 h-12 rounded-lg bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-100">
+                      {it.image_url ? <img src={it.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300"><Icon name="utensils" className="w-6 h-6" /></div>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-1">
+                        <h4 className="font-bold text-[11px] text-gray-800 leading-tight truncate flex-1">
+                          {it.name} {it.size && <span className="text-primary-600">({it.size.name})</span>}
+                        </h4>
+                        <button onClick={(e) => { e.stopPropagation(); requestRemoveItem(idx); setShowMobileCart(false); }}
+                          className="p-1 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"><Icon name="x" className="w-3 h-3" /></button>
+                      </div>
+                      {(it.toppings && it.toppings.length > 0) && (
+                        <p className="text-[9px] text-primary-500 font-medium italic truncate">+{it.toppings.map(t => t.name).join(", ")}</p>
+                      )}
+                      <div className="mt-1 flex items-center justify-between gap-1">
+                        <div className="flex items-center bg-gray-100 rounded-md px-0.5">
+                          <button onClick={(e) => { e.stopPropagation(); requestReduceQty(idx); }} className="w-7 h-7 flex items-center justify-center text-gray-500 font-bold text-sm">-</button>
+                          <span className="w-6 text-center text-[11px] font-bold text-gray-800">{it.qty}</span>
+                          <button onClick={(e) => { e.stopPropagation(); updateQty(idx, +1); }} className="w-7 h-7 flex items-center justify-center text-primary-600 font-bold text-sm">+</button>
+                        </div>
+                        <span className="font-bold text-[11px] text-gray-800">{calcLineTotal(it).toLocaleString()}đ</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Mobile cart footer */}
+              <div className="p-3 bg-gray-50 border-t space-y-2 sticky bottom-0 z-20">
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-gray-400 font-bold text-[10px] uppercase tracking-widest">Tổng cộng</span>
+                  <span className="text-xl font-black text-primary-600 tracking-tighter">{cartTotal.toLocaleString()}đ</span>
+                </div>
+                {selectedTable ? (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button onClick={() => { handlePayment(); setShowMobileCart(false); }}
+                      disabled={(cart.length === 0 && selectedTable.status !== "occupied") || submitting}
+                      className={`py-4 rounded-xl font-bold text-sm uppercase shadow-md active:scale-95 transition-all disabled:opacity-50 ${cart.length === 0 && selectedTable.status === "occupied" ? "bg-gray-500 text-white" : "bg-emerald-600 text-white"}`}>
+                      {submitting ? "Đang xử lý..." : (cart.length === 0 && selectedTable.status === "occupied" ? "Đóng bàn" : "Thanh toán")}
+                    </button>
+                    <button onClick={() => { setTransferTargetId(null); setShowTransferModal(true); setShowMobileCart(false); }}
+                      disabled={submitting}
+                      className="py-4 bg-orange-500 text-white rounded-xl font-bold text-sm uppercase shadow-md active:scale-95 transition-all disabled:opacity-50">
+                      Chuyển bàn
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button onClick={() => { openTakeawayModal("takeaway"); setShowMobileCart(false); }}
+                      disabled={cart.length === 0 || submitting}
+                      className="py-4 bg-orange-500 text-white rounded-xl font-bold text-xs uppercase active:scale-95 disabled:opacity-50">Mang về</button>
+                    <button onClick={() => { openTakeawayModal("ship"); setShowMobileCart(false); }}
+                      disabled={cart.length === 0 || submitting}
+                      className="py-4 bg-blue-500 text-white rounded-xl font-bold text-xs uppercase active:scale-95 disabled:opacity-50">Ship</button>
+                    <button onClick={() => { setSelectedTable(null); setView("tables"); setShowMobileCart(false); }}
+                      className="py-4 bg-white border-2 border-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase active:scale-95">Chọn bàn</button>
+                  </div>
+                )}
+                {hasNewItems && selectedTable && (
+                  <button onClick={() => { submitOrder(selectedTable.id); setShowMobileCart(false); }}
+                    disabled={submitting}
+                    className="w-full py-4 rounded-xl font-bold text-sm uppercase shadow-md active:scale-95 transition-all bg-gradient-to-r from-orange-500 to-orange-600 text-white disabled:opacity-50 flex items-center justify-center space-x-2">
+                    <span>{submitting ? "Đang gửi..." : "Báo chế biến"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {view === "menu" && (
-          <aside className="w-80 bg-white border-l flex flex-col shadow-2xl z-10 h-full min-h-0">
+          <aside className="hidden md:flex w-80 bg-white border-l flex-col shadow-2xl z-10 h-full min-h-0">
             {/* Header */}
             <div className="p-3 border-b">
               <div className="flex items-center justify-between">
@@ -2651,6 +2812,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   const audioContextRef = useRef(null);
   const lastPlayTime = useRef(0);
   const previousOrderIdsRef = useRef(new Set());
+  // Theo dõi optimistic status: itemId → {status, qty} — ngăn poll ghi đè
+  const pendingStatusRef = useRef(new Map());
 
   const isKitchen = unit === "kitchen";
   const token = localStorage.getItem(TOKEN_KEY);
@@ -2721,7 +2884,21 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       }
       previousOrderIdsRef.current = newIds;
 
-      setOrders(newOrders);
+      // Áp dụng pending optimistic status — giữ status mới cho item đang có API call
+      const pending = pendingStatusRef.current;
+      if (pending.size > 0) {
+        setOrders(newOrders.map((order) => ({
+          ...order,
+          items: order.items.map((it) => {
+            const p = pending.get(it.id);
+            if (!p) return it;
+            if (p.deleted) return null; // item đang bị hủy/xóa
+            return { ...it, status: p.status ?? it.status, quantity: p.qty ?? it.quantity };
+          }).filter(Boolean),
+        })));
+      } else {
+        setOrders(newOrders);
+      }
 
       // Build cancelled items map
       const cancelledMap = {};
@@ -2748,17 +2925,31 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     }
   }, [authFetch, unit, playAlertSound]);
 
+  // Change-detection polling: check lightweight key first, fetch full only when changed
+  const lastKitchenKeyRef = useRef("");
   useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, KITCHEN_POLL_INTERVAL_MS);
+    const poll = async () => {
+      try {
+        const resp = await authFetch(`/api/changes?ctx=kitchen&unit=${unit}`);
+        const changes = await resp.json();
+        if (changes.key === lastKitchenKeyRef.current) return;
+        lastKitchenKeyRef.current = changes.key;
+      } catch {
+        // /api/changes failed → always fetch full data as fallback
+      }
+      fetchOrders();
+    };
+    poll();
+    const interval = setInterval(poll, KITCHEN_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchOrders]);
+  }, [fetchOrders, authFetch, unit]);
 
   const updateItemStatus = async (itemId, status) => {
     const key = `${itemId}:status`;
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
-    // Optimistic: cập nhật UI ngay, gọi BE chạy nền
+    // Ghi pending: poll sẽ giữ status này cho đến khi API hoàn tất
+    pendingStatusRef.current.set(itemId, { status });
     setOrders((prev) =>
       prev.map((order) => ({
         ...order,
@@ -2772,9 +2963,9 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       });
     } catch (err) {
       console.error("Status update error:", err);
-      // Rollback: fetch lại trạng thái thật từ server
       fetchOrders();
     } finally {
+      pendingStatusRef.current.delete(itemId);
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
@@ -2785,7 +2976,11 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     if (itemActionLoading[key]) return;
     const newQty = item.quantity - 1;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
-    // Optimistic: giảm/xóa ngay trên UI
+    if (newQty <= 0) {
+      pendingStatusRef.current.set(item.id, { deleted: true });
+    } else {
+      pendingStatusRef.current.set(item.id, { qty: newQty });
+    }
     setOrders((prev) =>
       prev.map((order) => ({
         ...order,
@@ -2807,6 +3002,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       console.error("Reduce error:", err);
       fetchOrders();
     } finally {
+      pendingStatusRef.current.delete(item.id);
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
@@ -2816,7 +3012,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     const key = `${item.id}:cancel`;
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
-    // Optimistic: xóa ngay khỏi UI
+    pendingStatusRef.current.set(item.id, { deleted: true });
     setOrders((prev) =>
       prev.map((order) => ({
         ...order,
@@ -2829,6 +3025,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       console.error("Cancel error:", err);
       fetchOrders();
     } finally {
+      pendingStatusRef.current.delete(item.id);
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
     }
   };
@@ -3188,9 +3385,9 @@ function KitchenItemCard({ item, onAction, actionLabel, actionClass, timeDiff, o
             </div>
             <span className="text-[10px] text-gray-400 font-bold italic ml-auto">{timeDiff}</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-xl font-black leading-tight text-white uppercase truncate">{item.product_name}</p>
-            {item.size_name && <span className="text-purple-300 text-[10px] font-black uppercase">"{item.size_name}"</span>}
+            {item.size_name && <span className="text-purple-300 text-sm font-bold uppercase">— Size: {item.size_name}</span>}
             <div className="flex items-center gap-1.5 ml-auto mr-2">
               <span className="text-gray-300 font-black text-xl">x</span>
               <span className={`text-4xl font-black text-primary-400 leading-none ${item.quantity > 1 ? "scale-110" : ""}`}>{item.quantity}</span>
