@@ -1400,7 +1400,7 @@ function PosApp({ user, onLogout }) {
               <div className="space-y-1.5">
                 {selectedTable ? (
                   <div className="grid grid-cols-2 gap-1.5">
-                    <button onClick={() => setShowCheckout(true)}
+                    <button onClick={handlePayment}
                       disabled={(cart.length === 0 && selectedTable.status !== "occupied") || submitting}
                       className={`py-4 px-3 rounded-xl font-bold text-sm uppercase shadow-md active:scale-95 transition-all text-center disabled:opacity-50 ${cart.length === 0 && selectedTable.status === "occupied"
                         ? "bg-gray-500 text-white shadow-gray-200 hover:bg-gray-600"
@@ -1475,49 +1475,6 @@ function PosApp({ user, onLogout }) {
                   </button>
                 );
               })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCheckout && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowCheckout(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-xl font-bold mb-4">Thanh toán</h3>
-            <div className="bg-gray-50 p-3 rounded-lg mb-4 space-y-1">
-              {cart.map((it, idx) => {
-                const lineTotal = calcLineTotal(it);
-                return (
-                  <div key={cartKey(it)} className="flex justify-between text-sm">
-                    <span>{it.qty}x {it.name}{it.size && ` (${it.size.name})`}</span>
-                    <span className="font-semibold">{formatVND(lineTotal)}</span>
-                  </div>
-                );
-              })}
-              <div className="border-t pt-2 mt-2 flex justify-between font-bold text-lg">
-                <span>Tổng</span>
-                <span className="text-orange-600">{formatVND(cartTotal)}</span>
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Phương thức thanh toán</label>
-              <div className="grid grid-cols-2 gap-2">
-                {["cash", "transfer"].map((m) => (
-                  <button key={m} onClick={() => setPaymentMethod(m)}
-                    className={`p-3 rounded-lg border-2 font-semibold transition ${
-                      paymentMethod === m ? "border-orange-500 bg-orange-50 text-orange-700" : "border-gray-200 hover:border-gray-300"
-                    }`}>
-                    {m === "cash" ? <><Icon name="banknote" className="w-4 h-4 inline mr-1" /> Tiền mặt</> : <><Icon name="smartphone" className="w-4 h-4 inline mr-1" /> Chuyển khoản</>}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowCheckout(false)} className="flex-1 py-3 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50">Hủy</button>
-              <button onClick={handlePayment} disabled={submitting}
-                className="flex-1 py-3 bg-gray-900 hover:bg-orange-600 text-white font-bold rounded-lg transition disabled:opacity-50">
-                {submitting ? "Đang xử lý..." : "Xác nhận"}
-              </button>
             </div>
           </div>
         </div>
