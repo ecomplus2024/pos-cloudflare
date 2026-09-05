@@ -1065,7 +1065,7 @@ function PosApp({ user, onLogout }) {
 
       <div className="flex-1 flex overflow-hidden">
         {(view === "kitchen" || view === "counter") && (
-          <KitchenView unit={view} onLogout={onLogout} />
+          <KitchenView unit={view} fill="fill" onLogout={onLogout} />
         )}
         {view !== "kitchen" && view !== "counter" && (
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -2616,7 +2616,7 @@ function PublicMenuView({ tableId, onLogout }) {
 
 const KITCHEN_POLL_INTERVAL_MS = 5000; // 5s polling (Workers don't support SSE)
 
-function KitchenView({ unit, onLogout }) {
+function KitchenView({ unit, onLogout, fill = "screen" }) {
   const [orders, setOrders] = useState([]);
   const [cancelledItems, setCancelledItems] = useState({});
   const [loading, setLoading] = useState(true);
@@ -2898,7 +2898,7 @@ function KitchenView({ unit, onLogout }) {
   }
 
   return (
-    <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden font-sans">
+    <div className={`${fill === "screen" ? "h-screen" : "h-full"} w-full bg-gray-900 text-white flex flex-col overflow-hidden font-sans`}>
       {/* Header */}
       <header className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between shrink-0">
         <div className="flex items-center space-x-2">
