@@ -215,44 +215,49 @@ async function handleTables(env) {
     });
   }
   const serverTime = (new Date()).toISOString();
-  return json({
-    tables: result.results.map((t) => {
-      const positions = POSITIONS.map((pos) => {
-        const orders = ordersByTablePos.get(`${t.id}:${pos}`) || [];
-        const current_order_items = [];
-        let revenue = 0;
-        let occupiedAt = null;
-        for (const o of orders) {
-          if (!occupiedAt || o.created_at < occupiedAt) occupiedAt = o.created_at;
-          const items = itemsByOrder.get(o.id) || [];
-          for (const it of items) {
-            const lineTotal = (Number(it.price) + it.toppings.reduce((s, tp) => s + tp.price, 0)) * Number(it.quantity);
-            revenue += lineTotal;
-            current_order_items.push(it);
-          }
+  const tables = result.results.map((t) => {
+    const positions = POSITIONS.map((pos) => {
+      const orders = ordersByTablePos.get(`${t.id}:${pos}`) || [];
+      const current_order_items = [];
+      let revenue = 0;
+      let occupiedAt = null;
+      for (const o of orders) {
+        if (!occupiedAt || o.created_at < occupiedAt) occupiedAt = o.created_at;
+        const items = itemsByOrder.get(o.id) || [];
+        for (const it of items) {
+          const lineTotal = (Number(it.price) + it.toppings.reduce((s, tp) => s + tp.price, 0)) * Number(it.quantity);
+          revenue += lineTotal;
+          current_order_items.push(it);
         }
-        return {
-          position: pos,
-          status: orders.length > 0 ? "occupied" : "available",
-          occupied_at: occupiedAt,
-          revenue,
-          current_order_items
-        };
-      });
-      const anyOccupied = positions.some((p) => p.status === "occupied");
-      const totalRevenue = positions.reduce((s, p) => s + p.revenue, 0);
-      const primaryOrder = ordersByTablePos.get(`${t.id}:A`)?.[0] || ordersResult.results.find((o) => o.table_id === t.id);
+      }
       return {
-        ...t,
-        positions,
-        revenue: totalRevenue,
-        // Legacy fields kept for backward compatibility with older clients
-        status: anyOccupied ? "occupied" : t.status === "occupied" ? "occupied" : "empty",
-        pending_order: primaryOrder ? { id: primaryOrder.id, total: primaryOrder.total, created_at: primaryOrder.created_at } : null
+        position: pos,
+        status: orders.length > 0 ? "occupied" : "available",
+        occupied_at: occupiedAt,
+        revenue,
+        current_order_items
       };
-    }),
-    server_time: serverTime
+    });
+    const anyOccupied = positions.some((p) => p.status === "occupied");
+    const totalRevenue = positions.reduce((s, p) => s + p.revenue, 0);
+    const primaryOrder = ordersByTablePos.get(`${t.id}:A`)?.[0] || ordersResult.results.find((o) => o.table_id === t.id);
+    // Bàn chỉ occupied khi có order pending thực sự (không dùng fallback từ DB)
+    const derivedStatus = anyOccupied ? "occupied" : "empty";
+    return {
+      ...t,
+      positions,
+      revenue: totalRevenue,
+      status: derivedStatus,
+      pending_order: primaryOrder ? { id: primaryOrder.id, total: primaryOrder.total, created_at: primaryOrder.created_at } : null
+    };
   });
+  // Auto-reset DB status cho các bàn bị stale (DB ghi occupied nhưng không có order pending)
+  const staleTableIds = tables.filter((t) => t.status === "empty" && result.results.find((r) => r.id === t.id)?.status === "occupied").map((t) => t.id);
+  if (staleTableIds.length > 0) {
+    const ph = staleTableIds.map(() => "?").join(",");
+    await env.DB.prepare(`UPDATE tables SET status = 'empty', current_order_id = NULL WHERE id IN (${ph})`).bind(...staleTableIds).run();
+  }
+  return json({ tables, server_time: serverTime });
 }
 async function handleGetOrders(env) {
   const orders = await env.DB.prepare(
@@ -537,10 +542,14 @@ async function handleTransferTable(env, body) {
     return json({ error: "B\xE0n ngu\u1ED3n v\xE0 b\xE0n \u0111\xEDch gi\u1ED1ng nhau" }, 400);
   }
   const targetTable = await env.DB.prepare(
-    `SELECT id, status FROM tables WHERE id = ?`
+    `SELECT id FROM tables WHERE id = ?`
   ).bind(body.new_table_id).first();
   if (!targetTable) return json({ error: "B\xE0n \u0111\xEDch kh\xF4ng t\u1ED3n t\u1EA1i" }, 404);
-  if (targetTable.status === "occupied") {
+  // Ki\u1EC3m tra tr\u1EF1c ti\u1EBFp c\u00F3 order pending tr\u00EAn b\u00E0n \u0111\u00EDch (kh\u00F4ng d\u00F9ng DB status \u0111\u1EC3 tr\u00E1nh stale)
+  const targetOccupied = await env.DB.prepare(
+    `SELECT id FROM orders WHERE table_id = ? AND status = 'pending' LIMIT 1`
+  ).bind(body.new_table_id).first();
+  if (targetOccupied) {
     return json({ error: "B\xE0n \u0111\xEDch \u0111ang c\xF3 kh\xE1ch" }, 409);
   }
   const order = await env.DB.prepare(

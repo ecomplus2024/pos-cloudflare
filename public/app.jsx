@@ -892,6 +892,7 @@ function PosApp({ user, onLogout }) {
   // "Thanh toán": auto-submit then pay table
   const handlePayment = async () => {
     if (!selectedTable) return;
+    // Chỉ thanh toán khi có món trong giỏ hoặc bàn đã có đơn (occupied)
     if (cart.length === 0 && selectedTable.status !== "occupied") return;
     // Auto-save latest cart before paying (delta-submit will no-op if nothing new)
     if (cart.length > 0) {
@@ -915,6 +916,8 @@ function PosApp({ user, onLogout }) {
   // "Chuyển bàn": pick empty table then transfer
   const confirmTransfer = async () => {
     if (!selectedTable || !transferTargetId) return;
+    // Chỉ chuyển bàn khi bàn đã có đơn (occupied) hoặc có món trong giỏ
+    if (cart.length === 0 && selectedTable.status !== "occupied") return;
     try {
       await authFetch("/api/tables/transfer", {
         method: "POST",
@@ -1023,6 +1026,25 @@ function PosApp({ user, onLogout }) {
     }
     setView("menu");
   };
+
+  // Tính có món mới (delta > 0) so với lần báo chế biến trước
+  const hasNewItems = (() => {
+    if (cart.length === 0) return false;
+    const initialMap = new Map();
+    for (const it of initialCart) {
+      const key = cartIdentity(it);
+      initialMap.set(key, (initialMap.get(key) || 0) + it.qty);
+    }
+    const currentMap = new Map();
+    for (const it of cart) {
+      const key = cartIdentity(it);
+      currentMap.set(key, (currentMap.get(key) || 0) + it.qty);
+    }
+    for (const [key, curQty] of currentMap) {
+      if (curQty > (initialMap.get(key) || 0)) return true;
+    }
+    return false;
+  })();
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
@@ -1390,7 +1412,8 @@ function PosApp({ user, onLogout }) {
                       {submitting ? "Đang xử lý..." : (cart.length === 0 && selectedTable.status === "occupied" ? "Đóng bàn" : "Thanh toán/Đóng bàn")}
                     </button>
                     <button onClick={() => { setTransferTargetId(null); setShowTransferModal(true); }}
-                      className="py-4 px-3 bg-orange-500 text-white rounded-xl font-bold text-sm uppercase shadow-md shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all text-center">
+                      disabled={(cart.length === 0 && selectedTable.status !== "occupied") || submitting}
+                      className="py-4 px-3 bg-orange-500 text-white rounded-xl font-bold text-sm uppercase shadow-md shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all text-center disabled:opacity-50">
                       Chuyển bàn
                     </button>
                   </div>
@@ -1413,8 +1436,8 @@ function PosApp({ user, onLogout }) {
                   </div>
                 )}
 
-                {/* Nút Báo chế biến - CHỈ SÁNG khi có thay đổi chưa gửi */}
-                {cart.length > 0 && selectedTable && (
+                {/* Nút Báo chế biến - CHỈ hiện khi có món mới chưa gửi */}
+                {hasNewItems && selectedTable && (
                   <button onClick={() => submitOrder(selectedTable.id)}
                     disabled={submitting}
                     className={`w-full py-4 rounded-xl font-bold text-sm uppercase shadow-md active:scale-95 transition-all flex items-center justify-center space-x-2 ${"bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50"}`}
@@ -2673,21 +2696,22 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     const key = `${itemId}:status`;
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
+    // Optimistic: cập nhật UI ngay, gọi BE chạy nền
+    setOrders((prev) =>
+      prev.map((order) => ({
+        ...order,
+        items: order.items.map((it) => (it.id === itemId ? { ...it, status } : it)),
+      }))
+    );
     try {
       await authFetch(`/api/admin/order-items/${itemId}/status`, {
         method: "PUT",
         body: JSON.stringify({ status }),
       });
-      // Optimistic local update
-      setOrders((prev) =>
-        prev.map((order) => ({
-          ...order,
-          items: order.items.map((it) => (it.id === itemId ? { ...it, status } : it)),
-        }))
-      );
     } catch (err) {
       console.error("Status update error:", err);
-      alert("Không thể cập nhật trạng thái");
+      // Rollback: fetch lại trạng thái thật từ server
+      fetchOrders();
     } finally {
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
     }
@@ -2697,20 +2721,29 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     if (!item?.order_id || !item?.id || item.status === "completed") return;
     const key = `${item.id}:reduce`;
     if (itemActionLoading[key]) return;
+    const newQty = item.quantity - 1;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
+    // Optimistic: giảm/xóa ngay trên UI
+    setOrders((prev) =>
+      prev.map((order) => ({
+        ...order,
+        items: newQty <= 0
+          ? order.items.filter((it) => it.id !== item.id)
+          : order.items.map((it) => (it.id === item.id ? { ...it, quantity: newQty } : it)),
+      }))
+    );
     try {
       if (item.quantity <= 1) {
         await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, { method: "DELETE" });
       } else {
         await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, {
           method: "PUT",
-          body: JSON.stringify({ quantity: item.quantity - 1 }),
+          body: JSON.stringify({ quantity: newQty }),
         });
       }
-      await fetchOrders();
     } catch (err) {
       console.error("Reduce error:", err);
-      alert("Không thể giảm số lượng");
+      fetchOrders();
     } finally {
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
     }
@@ -2721,12 +2754,18 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     const key = `${item.id}:cancel`;
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
+    // Optimistic: xóa ngay khỏi UI
+    setOrders((prev) =>
+      prev.map((order) => ({
+        ...order,
+        items: order.items.filter((it) => it.id !== item.id),
+      }))
+    );
     try {
       await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, { method: "DELETE" });
-      await fetchOrders();
     } catch (err) {
       console.error("Cancel error:", err);
-      alert("Không thể hủy món");
+      fetchOrders();
     } finally {
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
     }
