@@ -112,6 +112,251 @@ function Icon({ name, className = "", strokeWidth = 2 }) {
   );
 }
 
+// ============ Offline Queue (IndexedDB) ============
+const DB_NAME = 'pos-offline-db';
+const DB_VERSION = 1;
+const STORE_NAME = 'offline_orders';
+
+function openOfflineDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        store.createIndex('by-status', 'status', { unique: false });
+        store.createIndex('by-created', 'created_at', { unique: false });
+      }
+    };
+  });
+}
+
+async function addToOfflineQueue(endpoint, method, body, headers = {}) {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const record = {
+      endpoint,
+      method: method || 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body,
+      created_at: Date.now(),
+      status: 'pending',
+      retry_count: 0,
+      max_retries: 3,
+      error_message: null,
+    };
+    const request = store.add(record);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getPendingOfflineOrders() {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const index = store.index('by-status');
+    const request = index.getAll('pending');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function updateOfflineOrderStatus(id, status, errorMessage = null) {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const getRequest = store.get(id);
+    getRequest.onsuccess = () => {
+      const record = getRequest.result;
+      if (record) {
+        record.status = status;
+        record.error_message = errorMessage;
+        if (status === 'syncing') record.retry_count = (record.retry_count || 0) + 1;
+        const putRequest = store.put(record);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      } else {
+        resolve();
+      }
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+}
+
+async function removeOfflineOrder(id) {
+  const db = await openOfflineDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function flushOfflineQueue(onProgress) {
+  const orders = await getPendingOfflineOrders();
+  let synced = 0;
+  let failed = 0;
+
+  for (const order of orders) {
+    try {
+      await updateOfflineOrderStatus(order.id, 'syncing');
+      const response = await fetch(order.endpoint, {
+        method: order.method,
+        headers: order.headers,
+        body: JSON.stringify(order.body),
+      });
+      if (response.ok) {
+        await updateOfflineOrderStatus(order.id, 'synced');
+        setTimeout(() => removeOfflineOrder(order.id), 5000);
+        synced++;
+        if (onProgress) onProgress({ type: 'synced', order });
+      } else {
+        const isAuthError = response.status === 401 || response.status === 403;
+        await updateOfflineOrderStatus(order.id, 'failed',
+          isAuthError ? 'auth_expired' : `HTTP ${response.status}`);
+        failed++;
+        if (onProgress) onProgress({ type: 'failed', order });
+      }
+    } catch (err) {
+      const needsRetry = (order.retry_count || 0) < (order.max_retries || 3);
+      await updateOfflineOrderStatus(order.id, needsRetry ? 'pending' : 'failed', err.message);
+      if (!needsRetry) {
+        failed++;
+        if (onProgress) onProgress({ type: 'failed', order });
+      }
+    }
+  }
+  return { synced, failed };
+}
+
+// ============ Hooks ============
+
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return isOnline;
+}
+
+function useOfflineQueue(isOnline) {
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState(null);
+
+  useEffect(() => {
+    const updateCount = async () => {
+      try {
+        const orders = await getPendingOfflineOrders();
+        setPendingCount(orders.length);
+      } catch (e) {
+        console.error('Failed to get pending orders:', e);
+      }
+    };
+    updateCount();
+    const interval = setInterval(updateCount, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (isOnline && pendingCount > 0 && !syncing) {
+      syncNow();
+    }
+  }, [isOnline]);
+
+  const syncNow = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const result = await flushOfflineQueue(({ type }) => {
+        if (type === 'synced') setPendingCount(p => Math.max(0, p - 1));
+      });
+      setLastSyncResult(result);
+    } catch (e) {
+      console.error('Sync failed:', e);
+    } finally {
+      setSyncing(false);
+      const orders = await getPendingOfflineOrders();
+      setPendingCount(orders.length);
+    }
+  }, [syncing]);
+
+  const addToQueue = useCallback(async (endpoint, method, body, headers) => {
+    const id = await addToOfflineQueue(endpoint, method, body, headers);
+    setPendingCount(p => p + 1);
+    return id;
+  }, []);
+
+  return {
+    pendingCount,
+    syncing,
+    lastSyncResult,
+    addToQueue,
+    syncNow,
+    isOnline,
+  };
+}
+
+function useInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setInstalled(true);
+    }
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setInstalled(true);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const install = useCallback(async () => {
+    if (!deferredPrompt) return false;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstalled(true);
+    }
+    setDeferredPrompt(null);
+    return outcome === 'accepted';
+  }, [deferredPrompt]);
+
+  return { deferredPrompt, installed, install };
+}
+
 const MOCK_MENU = {
   store_name: "POS",
   categories: [
@@ -1120,24 +1365,24 @@ function PosApp({ user, onLogout }) {
         ><Icon name="settings" className="w-5 h-5" /></button>
       </aside>
       {/* Mobile bottom navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50 flex items-center justify-around py-2 px-1 safe-area-bottom">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-white border-t shadow-lg z-50 flex items-center justify-between py-2 px-4 safe-area-bottom">
         <button onClick={() => setView("tables")}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "tables" || view === "menu" ? "bg-primary-100 text-primary-700" : "text-gray-400"}`}>
+          className={`flex flex-col items-center gap-0.5 flex-1 py-2 rounded-xl transition ${view === "tables" || view === "menu" ? "bg-primary-100 text-primary-700" : "text-gray-400"}`}>
           <Icon name="shopping-cart" className="w-5 h-5" /><span className="text-[10px] font-semibold">POS</span>
         </button>
         <button onClick={() => setView("kitchen")}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "kitchen" ? "bg-orange-100 text-orange-700" : "text-gray-400"}`}>
+          className={`flex flex-col items-center gap-0.5 flex-1 py-2 rounded-xl transition ${view === "kitchen" ? "bg-orange-100 text-orange-700" : "text-gray-400"}`}>
           <Icon name="chef-hat" className="w-5 h-5" /><span className="text-[10px] font-semibold">Bếp</span>
         </button>
         <button onClick={() => setView("counter")}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "counter" ? "bg-blue-100 text-blue-700" : "text-gray-400"}`}>
+          className={`flex flex-col items-center gap-0.5 flex-1 py-2 rounded-xl transition ${view === "counter" ? "bg-blue-100 text-blue-700" : "text-gray-400"}`}>
           <Icon name="cup-soda" className="w-5 h-5" /><span className="text-[10px] font-semibold">Pha chế</span>
         </button>
         <button onClick={() => {
           if (user?.role !== "admin") { showToast("Chỉ admin mới vào được Cài đặt"); return; }
           setSelectedTable(null); setCart([]); setView("admin");
         }}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "admin" ? "bg-primary-100 text-primary-700" : user?.role === "admin" ? "text-gray-400" : "text-gray-300"}`}>
+          className={`flex flex-col items-center gap-0.5 flex-1 py-2 rounded-xl transition ${view === "admin" ? "bg-primary-100 text-primary-700" : user?.role === "admin" ? "text-gray-400" : "text-gray-300"}`}>
           <Icon name="settings" className="w-5 h-5" /><span className="text-[10px] font-semibold">Cài đặt</span>
         </button>
       </nav>
@@ -1296,15 +1541,17 @@ function PosApp({ user, onLogout }) {
 
           {view === "menu" && (
             <>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <button onClick={() => { setSelectedTable(null); setView("tables"); setCart([]);  }}
-                    className="text-sm text-gray-500 hover:text-gray-900 mb-1 flex items-center gap-1"><Icon name="arrow-left" className="w-4 h-4" /> Quay lại</button>
-                  <h2 className="text-xl font-bold">{selectedTable ? `Bàn: ${selectedTable.name}` : "Order nhanh"}</h2>
+              <div className="mb-3">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div>
+                    <button onClick={() => { setSelectedTable(null); setView("tables"); setCart([]);  }}
+                      className="text-sm text-gray-500 hover:text-gray-900 mb-1 flex items-center gap-1"><Icon name="arrow-left" className="w-4 h-4" /> Quay lại</button>
+                    <h2 className="text-xl font-bold">{selectedTable ? `Bàn: ${selectedTable.name}` : "Order nhanh"}</h2>
+                  </div>
                 </div>
-                <input type="search" placeholder="Tìm món..." value={search} data-focus-key="menu-search"
+                <input type="search" placeholder="🔍 Tìm món..." value={search} data-focus-key="menu-search"
                   onChange={(e) => setSearch(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 min-w-[120px] max-w-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
               </div>
               {/* Categories: counter row + kitchen row with dashed separator */}
@@ -1407,9 +1654,9 @@ function PosApp({ user, onLogout }) {
         )}
 
         {/* Mobile cart floating button */}
-        {view === "menu" && cart.length > 0 && (
+        {view === "menu" && cart.length > 0 && !showMobileCart && (
           <button onClick={() => setShowMobileCart(true)}
-            className="md:hidden fixed bottom-4 right-4 bg-primary-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 font-black z-20"
+            className="md:hidden fixed bottom-20 right-4 bg-primary-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 font-black z-20"
             style={{boxShadow: "0 0 20px rgba(99,102,241,0.4)", animation: "bounce 2s infinite, pulse-ring 1.5s ease-out infinite"}}>
             <span className="text-2xl" style={{animation: "wiggle 0.5s ease-in-out"}}><Icon name="shopping-cart" className="w-6 h-6" /></span>
             <div className="flex flex-col items-start">
@@ -2477,10 +2724,11 @@ function PublicMenuView({ tableId, onLogout }) {
   // Filter products
   const filtered = useMemo(() => {
     let list = products;
-    if (selectedCategory !== null) list = list.filter((p) => p.category_id === selectedCategory);
     if (searchQuery.trim()) {
       const q = removeAccents(searchQuery.toLowerCase().trim());
       list = list.filter((p) => removeAccents(p.name.toLowerCase()).includes(q));
+    } else if (selectedCategory !== null) {
+      list = list.filter((p) => p.category_id === selectedCategory);
     }
     return list;
   }, [products, selectedCategory, searchQuery]);
@@ -3560,10 +3808,11 @@ function TakeawayMenuView() {
 
   const filtered = useMemo(() => {
     let list = products;
-    if (selectedCategory !== null) list = list.filter((p) => p.category_id === selectedCategory);
     if (searchQuery.trim()) {
       const q = removeAccents(searchQuery.toLowerCase().trim());
       list = list.filter((p) => removeAccents(p.name.toLowerCase()).includes(q));
+    } else if (selectedCategory !== null) {
+      list = list.filter((p) => p.category_id === selectedCategory);
     }
     return list;
   }, [products, selectedCategory, searchQuery]);
@@ -4188,10 +4437,11 @@ function ShipMenuView() {
 
   const filtered = useMemo(() => {
     let list = products;
-    if (selectedCategory !== null) list = list.filter((p) => p.category_id === selectedCategory);
     if (searchQuery.trim()) {
       const q = removeAccents(searchQuery.toLowerCase().trim());
       list = list.filter((p) => removeAccents(p.name.toLowerCase()).includes(q));
+    } else if (selectedCategory !== null) {
+      list = list.filter((p) => p.category_id === selectedCategory);
     }
     return list;
   }, [products, selectedCategory, searchQuery]);
