@@ -1,0 +1,35 @@
+- generic [ref=f3e5]:
+  - navigation [ref=f3e6]:
+    - button "POS" [ref=f3e7] [cursor=pointer]
+    - button "Bếp" [ref=f3e14] [cursor=pointer]
+    - button "Pha chế" [ref=f3e18] [cursor=pointer]
+    - button "Cài đặt" [ref=f3e24] [cursor=pointer]
+  - generic [ref=f3e31]:
+    - generic [ref=f3e130]:
+      - generic [ref=f3e132]:
+        - button "Quay lại" [ref=f3e133] [cursor=pointer]
+        - 'heading "Bàn: Bàn 1" [level=2] [ref=f3e136]'
+      - searchbox "🔍 Tìm món..." [ref=f3e137]
+    - generic [ref=f3e138]:
+      - button "Tất cả" [ref=f3e139] [cursor=pointer]
+      - button "Cà phê" [active] [ref=f3e140] [cursor=pointer]
+      - button "Trà sữa" [ref=f3e141] [cursor=pointer]
+      - button "Nước ép" [ref=f3e142] [cursor=pointer]
+      - button "Bánh ngọt" [ref=f3e143] [cursor=pointer]
+      - button "Topping" [ref=f3e144] [cursor=pointer]
+    - generic [ref=f3e145]:
+      - generic [ref=f3e152]:
+        - generic [ref=f3e154]:
+          - heading "Bạc xỉu" [level=4] [ref=f3e155]
+          - paragraph [ref=f3e156]: 35,000đ
+        - generic [ref=f3e157]: +
+      - generic [ref=f3e158]:
+        - generic [ref=f3e160]:
+          - heading "Cà phê sữa đá" [level=4] [ref=f3e161]
+          - paragraph [ref=f3e162]: 30,000đ
+        - generic [ref=f3e163]: +
+      - generic [ref=f3e164]:
+        - generic [ref=f3e166]:
+          - heading "Cà phê đen" [level=4] [ref=f3e167]
+          - paragraph [ref=f3e168]: 25,000đ
+        - generic [ref=f3e169]: +
