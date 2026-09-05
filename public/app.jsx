@@ -937,6 +937,7 @@ function PosApp({ user, onLogout }) {
     setShowCheckout(false);
     clearCart();
     setView("tables");
+    setSubmitting(false);
     showToast("Đã thanh toán");
     // Auto-save latest cart before paying (delta-submit will no-op if nothing new)
     if (cart.length > 0) {
