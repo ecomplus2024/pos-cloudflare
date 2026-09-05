@@ -538,11 +538,11 @@ function PosApp({ user, onLogout }) {
   }, [view, categories]);
 
   const filtered = useMemo(() => products.filter((p) => {
-    if (selectedCategory !== null && p.category_id !== selectedCategory) return false;
     if (search.trim()) {
       const searchNorm = removeAccents(search.toLowerCase().trim());
       return removeAccents(p.name.toLowerCase()).includes(searchNorm);
     }
+    if (selectedCategory !== null && p.category_id !== selectedCategory) return false;
     return true;
   }), [products, selectedCategory, search]);
 
@@ -929,24 +929,35 @@ function PosApp({ user, onLogout }) {
     submitQuickOrder(orderType, name);
   };
 
-  // "Thanh toán": auto-submit then pay table
+  // "Thanh toán": gửi món + thanh toán + đóng bàn, tất cả chạy nền
   const handlePayment = async () => {
     if (!selectedTable) return;
     if (cart.length === 0 && selectedTable.status !== "occupied") return;
-    // Optimistic: đóng bàn ngay trên UI, gọi BE chạy nền
+    const tableId = selectedTable.id;
+    const pos = selectedPosition;
+    // Capture cart trước khi clear
+    const pendingItems = cart.length > 0 ? cart.map((it) => ({
+      product_id: it.id, quantity: it.qty,
+      size_id: it.size?.id,
+      toppings: (it.toppings || []).map((t) => t.id),
+      note: it.notes || "",
+    })) : [];
+    // Optimistic: đóng bàn ngay trên UI
     setShowCheckout(false);
     clearCart();
     setView("tables");
-    setSubmitting(false);
     showToast("Đã thanh toán");
-    // Auto-save latest cart before paying (delta-submit will no-op if nothing new)
-    if (cart.length > 0) {
-      await submitOrder();
-    }
+    // Gửi BE chạy nền — không block UI, không đụng submitting
     try {
-      await authFetch(`/api/tables/${selectedTable.id}/pay`, {
+      if (pendingItems.length > 0) {
+        await authFetch("/api/orders", {
+          method: "POST",
+          body: JSON.stringify({ table_id: tableId, table_position: pos, order_type: "dine_in", payment_method: paymentMethod, items: pendingItems }),
+        });
+      }
+      await authFetch(`/api/tables/${tableId}/pay`, {
         method: "POST",
-        body: JSON.stringify({ payment_method: paymentMethod, table_position: selectedPosition }),
+        body: JSON.stringify({ payment_method: paymentMethod, table_position: pos }),
       });
       refreshTables();
     } catch (err) {
@@ -1108,13 +1119,35 @@ function PosApp({ user, onLogout }) {
           title={user?.role === "admin" ? "Cài đặt" : "Chỉ admin"}
         ><Icon name="settings" className="w-5 h-5" /></button>
       </aside>
+      {/* Mobile bottom navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50 flex items-center justify-around py-2 px-1 safe-area-bottom">
+        <button onClick={() => setView("tables")}
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "tables" || view === "menu" ? "bg-primary-100 text-primary-700" : "text-gray-400"}`}>
+          <Icon name="shopping-cart" className="w-5 h-5" /><span className="text-[10px] font-semibold">POS</span>
+        </button>
+        <button onClick={() => setView("kitchen")}
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "kitchen" ? "bg-orange-100 text-orange-700" : "text-gray-400"}`}>
+          <Icon name="chef-hat" className="w-5 h-5" /><span className="text-[10px] font-semibold">Bếp</span>
+        </button>
+        <button onClick={() => setView("counter")}
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "counter" ? "bg-blue-100 text-blue-700" : "text-gray-400"}`}>
+          <Icon name="cup-soda" className="w-5 h-5" /><span className="text-[10px] font-semibold">Pha chế</span>
+        </button>
+        <button onClick={() => {
+          if (user?.role !== "admin") { showToast("Chỉ admin mới vào được Cài đặt"); return; }
+          setSelectedTable(null); setCart([]); setView("admin");
+        }}
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${view === "admin" ? "bg-primary-100 text-primary-700" : user?.role === "admin" ? "text-gray-400" : "text-gray-300"}`}>
+          <Icon name="settings" className="w-5 h-5" /><span className="text-[10px] font-semibold">Cài đặt</span>
+        </button>
+      </nav>
       <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
         {(view === "kitchen" || view === "counter") && (
           <KitchenView unit={view} fill="fill" onLogout={onLogout} />
         )}
         {view !== "kitchen" && view !== "counter" && (
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
           {view === "tables" && (
             <>
               <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl">
@@ -1138,7 +1171,7 @@ function PosApp({ user, onLogout }) {
                 )}
               </div>
               {tableFilterTab === "tables" && (
-              <div className="grid md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <button onClick={() => { setSelectedTable(null); setCart([]); setInitialCart([]); setCurrentOrderId(null); setView("menu"); }}
                   className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-5 text-left hover:border-orange-500 transition relative">
                   <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-orange-500"></div>
@@ -1271,7 +1304,7 @@ function PosApp({ user, onLogout }) {
                 </div>
                 <input type="search" placeholder="Tìm món..." value={search} data-focus-key="menu-search"
                   onChange={(e) => setSearch(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-48 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 min-w-[120px] max-w-xs focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
               {/* Categories: counter row + kitchen row with dashed separator */}
@@ -3529,8 +3562,8 @@ function TakeawayMenuView() {
     let list = products;
     if (selectedCategory !== null) list = list.filter((p) => p.category_id === selectedCategory);
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter((p) => p.name.toLowerCase().includes(q));
+      const q = removeAccents(searchQuery.toLowerCase().trim());
+      list = list.filter((p) => removeAccents(p.name.toLowerCase()).includes(q));
     }
     return list;
   }, [products, selectedCategory, searchQuery]);
@@ -4157,8 +4190,8 @@ function ShipMenuView() {
     let list = products;
     if (selectedCategory !== null) list = list.filter((p) => p.category_id === selectedCategory);
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter((p) => p.name.toLowerCase().includes(q));
+      const q = removeAccents(searchQuery.toLowerCase().trim());
+      list = list.filter((p) => removeAccents(p.name.toLowerCase()).includes(q));
     }
     return list;
   }, [products, selectedCategory, searchQuery]);
@@ -5681,7 +5714,7 @@ function AdminPanel({ embedded = false, onExit }) {
     }
   };
 
-  const normalizeText = (value) => value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const normalizeText = (value) => removeAccents(value.toLowerCase());
 
   const filteredProducts = products.filter((product) => {
     const matchesStatus = productTab === "active" ? !!product.available : !product.available;

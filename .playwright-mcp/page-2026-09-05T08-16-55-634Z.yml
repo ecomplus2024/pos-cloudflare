@@ -1,0 +1,65 @@
+- generic [ref=f2e5]:
+  - navigation [ref=f2e6]:
+    - button "POS" [active] [ref=f2e7] [cursor=pointer]
+    - button "Bếp" [ref=f2e14] [cursor=pointer]
+    - button "Pha chế" [ref=f2e18] [cursor=pointer]
+    - button "Cài đặt" [ref=f2e24] [cursor=pointer]
+  - generic [ref=f2e134]:
+    - generic [ref=f2e135]:
+      - button "Sơ đồ bàn" [ref=f2e136] [cursor=pointer]
+      - button "Mang về" [ref=f2e142] [cursor=pointer]
+      - button "Ship" [ref=f2e146] [cursor=pointer]
+    - generic [ref=f2e152]:
+      - button "ORDER NHANH MANG VỀ / TẠI QUẦY" [ref=f2e153] [cursor=pointer]:
+        - generic [ref=f2e155]: ORDER NHANH
+        - generic [ref=f2e162]: MANG VỀ / TẠI QUẦY
+      - button "Bàn 1 Bàn trống" [ref=f2e163] [cursor=pointer]:
+        - generic [ref=f2e165]: Bàn 1
+        - generic [ref=f2e166]: Bàn trống
+      - button "Bàn 2 Bàn trống" [ref=f2e167] [cursor=pointer]:
+        - generic [ref=f2e169]: Bàn 2
+        - generic [ref=f2e170]: Bàn trống
+      - button "Bàn 3 Bàn trống" [ref=f2e171] [cursor=pointer]:
+        - generic [ref=f2e173]: Bàn 3
+        - generic [ref=f2e174]: Bàn trống
+      - button "Bàn 4 Bàn trống" [ref=f2e175] [cursor=pointer]:
+        - generic [ref=f2e177]: Bàn 4
+        - generic [ref=f2e178]: Bàn trống
+      - button "Bàn 5 Bàn trống" [ref=f2e179] [cursor=pointer]:
+        - generic [ref=f2e181]: Bàn 5
+        - generic [ref=f2e182]: Bàn trống
+      - button "Bàn 6 65.000 đ DÙNG 14PH" [ref=f2e183] [cursor=pointer]:
+        - generic [ref=f2e185]: Bàn 6
+        - generic [ref=f2e186]:
+          - generic [ref=f2e187]: 65.000 đ
+          - generic [ref=f2e188]: DÙNG 14PH
+      - button "Bàn 7 Bàn trống" [ref=f2e193] [cursor=pointer]:
+        - generic [ref=f2e195]: Bàn 7
+        - generic [ref=f2e196]: Bàn trống
+      - button "Bàn 8 Bàn trống" [ref=f2e197] [cursor=pointer]:
+        - generic [ref=f2e199]: Bàn 8
+        - generic [ref=f2e200]: Bàn trống
+      - button "Bàn 1 Bàn trống" [ref=f2e201] [cursor=pointer]:
+        - generic [ref=f2e203]: Bàn 1
+        - generic [ref=f2e204]: Bàn trống
+      - button "Bàn 2 Bàn trống" [ref=f2e205] [cursor=pointer]:
+        - generic [ref=f2e207]: Bàn 2
+        - generic [ref=f2e208]: Bàn trống
+      - button "Bàn 3 Bàn trống" [ref=f2e209] [cursor=pointer]:
+        - generic [ref=f2e211]: Bàn 3
+        - generic [ref=f2e212]: Bàn trống
+      - button "Bàn 4 Bàn trống" [ref=f2e213] [cursor=pointer]:
+        - generic [ref=f2e215]: Bàn 4
+        - generic [ref=f2e216]: Bàn trống
+      - button "Bàn 5 Bàn trống" [ref=f2e217] [cursor=pointer]:
+        - generic [ref=f2e219]: Bàn 5
+        - generic [ref=f2e220]: Bàn trống
+      - button "Bàn 6 Bàn trống" [ref=f2e221] [cursor=pointer]:
+        - generic [ref=f2e223]: Bàn 6
+        - generic [ref=f2e224]: Bàn trống
+      - button "Bàn 7 Bàn trống" [ref=f2e225] [cursor=pointer]:
+        - generic [ref=f2e227]: Bàn 7
+        - generic [ref=f2e228]: Bàn trống
+      - button "Bàn 8 Bàn trống" [ref=f2e229] [cursor=pointer]:
+        - generic [ref=f2e231]: Bàn 8
+        - generic [ref=f2e232]: Bàn trống

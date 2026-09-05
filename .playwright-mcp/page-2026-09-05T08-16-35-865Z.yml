@@ -1,0 +1,7 @@
+- generic [ref=f2e5]:
+  - navigation [ref=f2e6]:
+    - button "POS" [ref=f2e7] [cursor=pointer]
+    - button "Bếp" [active] [ref=f2e14] [cursor=pointer]
+    - button "Pha chế" [ref=f2e18] [cursor=pointer]
+    - button "Cài đặt" [ref=f2e24] [cursor=pointer]
+  - generic [ref=f2e29]: Đang tải...

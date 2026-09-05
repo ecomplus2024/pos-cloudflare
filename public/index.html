@@ -67,6 +67,9 @@
       .animate-slide-in-right { animation: slideInRight 0.3s ease-out; }
 
       /* Tailwind v3 generates all responsive variants - no manual @media needed */
+
+      /* Mobile bottom nav safe area for iOS */
+      .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
     </style>
   </head>
   <body class="bg-stone-50">

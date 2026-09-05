@@ -1,0 +1,55 @@
+- generic [ref=f2e5]:
+  - navigation [ref=f2e6]:
+    - button "POS" [ref=f2e7] [cursor=pointer]
+    - button "Bếp" [ref=f2e14] [cursor=pointer]
+    - button "Pha chế" [ref=f2e18] [cursor=pointer]
+    - button "Cài đặt" [ref=f2e24] [cursor=pointer]
+  - generic [ref=f2e134]:
+    - generic [ref=f2e233]:
+      - generic [ref=f2e234]:
+        - button "Quay lại" [ref=f2e235] [cursor=pointer]
+        - 'heading "Bàn: Bàn 1" [level=2] [ref=f2e238]'
+      - searchbox "Tìm món..." [ref=f2e239]
+    - generic [ref=f2e240]:
+      - button "Tất cả" [ref=f2e241] [cursor=pointer]
+      - button "Cà phê" [ref=f2e242] [cursor=pointer]
+      - button "Trà sữa" [ref=f2e243] [cursor=pointer]
+      - button "Nước ép" [ref=f2e244] [cursor=pointer]
+      - button "Bánh ngọt" [ref=f2e245] [cursor=pointer]
+      - button "Topping" [ref=f2e246] [cursor=pointer]
+    - generic [ref=f2e247]:
+      - generic [ref=f2e248]:
+        - generic [ref=f2e250]:
+          - heading "Bánh croissant" [level=4] [ref=f2e251]
+          - paragraph [ref=f2e252]: 25,000đ
+        - generic [ref=f2e253]: +
+      - generic [ref=f2e254]:
+        - generic [ref=f2e256]:
+          - heading "Bạc xỉu" [level=4] [ref=f2e257]
+          - paragraph [ref=f2e258]: 35,000đ
+        - generic [ref=f2e259]: +
+      - generic [ref=f2e260]:
+        - generic [ref=f2e262]:
+          - heading "Cà phê sữa đá" [level=4] [ref=f2e263]
+          - paragraph [ref=f2e264]: 30,000đ
+        - generic [ref=f2e265]: +
+      - generic [ref=f2e266]:
+        - generic [ref=f2e268]:
+          - heading "Cà phê đen" [level=4] [ref=f2e269]
+          - paragraph [ref=f2e270]: 25,000đ
+        - generic [ref=f2e271]: +
+      - generic [ref=f2e272]:
+        - generic [ref=f2e274]:
+          - heading "Nước ép cam" [level=4] [ref=f2e275]
+          - paragraph [ref=f2e276]: 35,000đ
+        - generic [ref=f2e277]: +
+      - generic [ref=f2e278]:
+        - generic [ref=f2e280]:
+          - heading "Trà sữa trân châu" [level=4] [ref=f2e281]
+          - paragraph [ref=f2e282]: 35,000đ
+        - generic [ref=f2e283]: +
+      - generic [ref=f2e284]:
+        - generic [ref=f2e286]:
+          - heading "Trà đào cam sả" [level=4] [ref=f2e287]
+          - paragraph [ref=f2e288]: 35,000đ
+        - generic [ref=f2e289]: +
