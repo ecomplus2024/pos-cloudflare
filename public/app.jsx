@@ -5378,7 +5378,7 @@ function AdminPanel({ embedded = false, onExit }) {
       </aside>
 
       {/* Main Content Area */}
-      <main className={`flex-1 p-4 md:p-6 lg:p-10 ${embedded ? "pb-10 min-h-0 overflow-y-auto" : "pb-24 md:pb-10 md:ml-56 lg:ml-72"}`}>
+      <main className={`flex-1 min-w-0 p-4 md:p-6 lg:p-10 ${embedded ? "pb-10 min-h-0 overflow-y-auto" : "pb-24 md:pb-10 md:ml-56 lg:ml-72"}`}>
         {embedded && (
           <div className="md:hidden mb-4 overflow-x-auto">
             <div className="flex min-w-max gap-2 rounded-2xl border border-gray-100 bg-white p-2 shadow-sm">
