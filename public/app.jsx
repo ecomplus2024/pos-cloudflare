@@ -45,6 +45,7 @@ const ICON_PATHS = {
   "coffee": (<><path d="M10 2v2" /><path d="M14 2v2" /><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1" /><path d="M6 2v2" /></>),
   "coins": (<><path d="M13.744 17.736a6 6 0 1 1-7.48-7.48" /><path d="M15 6h1v4" /><path d="m6.134 14.768.866-.5 2 3.464" /><circle cx="16" cy="8" r="6" /></>),
   "credit-card": (<><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></>),
+  "download": (<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></>),
   "cup-soda": (<><path d="m6 8 1.75 12.28a2 2 0 0 0 2 1.72h4.54a2 2 0 0 0 2-1.72L18 8" /><path d="M5 8h14" /><path d="M7 15a6.47 6.47 0 0 1 5 0 6.47 6.47 0 0 0 5 0" /><path d="m12 8 1-6h2" /></>),
   "eye": (<><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /><circle cx="12" cy="12" r="3" /></>),
   "grip-vertical": (<><circle cx="9" cy="12" r="1" /><circle cx="9" cy="5" r="1" /><circle cx="9" cy="19" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="5" r="1" /><circle cx="15" cy="19" r="1" /></>),
@@ -366,6 +367,7 @@ function PosApp({ user, onLogout }) {
   const [products, setProducts] = useState([]);
   const [tables, setTables] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [tableFilterTab, setTableFilterTab] = useState("tables"); // "tables" | "takeaway" | "ship"
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const hasInitCategory = useRef(false);
@@ -469,7 +471,7 @@ function PosApp({ user, onLogout }) {
       } catch {}
     };
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 2000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [view, selectedTable?.id]);
 
@@ -478,7 +480,7 @@ function PosApp({ user, onLogout }) {
     if (view !== "orders") return;
     loadOrders();
     fetchTakeawayOrders();
-    const interval = setInterval(() => { loadOrders(); fetchTakeawayOrders(); }, 30000);
+    const interval = setInterval(() => { loadOrders(); fetchTakeawayOrders(); }, 5000);
     return () => clearInterval(interval);
   }, [view]);
 
@@ -487,6 +489,11 @@ function PosApp({ user, onLogout }) {
     setToast(msg);
     toastTimer.current = setTimeout(() => setToast(null), 2000);
   };
+
+  // Load orders when entering tables view (for takeaway/ship filter tabs)
+  useEffect(() => {
+    if (view === "tables") loadOrders();
+  }, [view]);
 
   // Batch 3: auto-select first category when entering menu view
   useEffect(() => {
@@ -729,8 +736,11 @@ function PosApp({ user, onLogout }) {
         authFetch("/api/takeaway?status=pending").catch(() => []),
       ]);
       const dinein = (dineinData.orders || []).map((o) => ({ ...o, _kind: "dinein" }));
-      const takeaway = (Array.isArray(takeawayData) ? takeawayData : []).map((o) => ({ ...o, _kind: "takeaway" }));
-      const merged = [...dinein, ...takeaway].sort((a, b) => {
+      const takeawayOrShip = (Array.isArray(takeawayData) ? takeawayData : []).map((o) => ({
+        ...o,
+        _kind: o.order_type === "ship" ? "ship" : "takeaway",
+      }));
+      const merged = [...dinein, ...takeawayOrShip].sort((a, b) => {
         const ta = a.created_at || "";
         const tb = b.created_at || "";
         return tb.localeCompare(ta);
@@ -821,17 +831,17 @@ function PosApp({ user, onLogout }) {
       setShowCheckout(false);
       setSubmitting(false);
       showToast("Đã gửi báo chế biến");
-      try {
-        const data = await authFetch("/api/orders", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        setCurrentOrderId(data.order_id);
-        refreshTables();
-        loadOrders();
-      } catch (err) {
-        showToast("Lỗi gửi bếp: " + err.message);
-      }
+      const data = await authFetch("/api/orders", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setCurrentOrderId(data.order_id);
+      refreshTables();
+      loadOrders();
+    } catch (err) {
+      showToast("Lỗi gửi bếp: " + err.message);
+      setSubmitting(false);
+    }
   };
 
   // Quick order (no table): "Mang về" / "Ship"
@@ -1074,19 +1084,29 @@ function PosApp({ user, onLogout }) {
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {view === "tables" && (
             <>
-              <div className="flex gap-2 mb-6">
-                <button className="px-5 py-2 rounded-full bg-red-600 text-white font-bold text-sm shadow-sm flex items-center gap-2"><Icon name="layout-grid" className="w-4 h-4" /> Sơ đồ bàn</button>
-                <button className="px-5 py-2 rounded-full bg-white border border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50 flex items-center gap-2"><Icon name="shopping-bag" className="w-4 h-4" /> Mang về</button>
-                <button className="px-5 py-2 rounded-full bg-white border border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50 flex items-center gap-2"><Icon name="truck" className="w-4 h-4" /> Ship</button>
+              <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl">
+                <button onClick={() => setTableFilterTab("tables")}
+                  className={`px-5 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-2 ${tableFilterTab === "tables" ? "bg-red-600 text-white shadow-sm" : "bg-white text-gray-700 hover:bg-gray-50"}`}>
+                  <Icon name="layout-grid" className="w-4 h-4" /> Sơ đồ bàn
+                </button>
+                <button onClick={() => setTableFilterTab("takeaway")}
+                  className={`px-5 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-2 ${tableFilterTab === "takeaway" ? "bg-orange-500 text-white shadow-sm" : "bg-white text-gray-700 hover:bg-gray-50"}`}>
+                  <Icon name="shopping-bag" className="w-4 h-4" /> Mang về
+                </button>
+                <button onClick={() => setTableFilterTab("ship")}
+                  className={`px-5 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-2 ${tableFilterTab === "ship" ? "bg-blue-500 text-white shadow-sm" : "bg-white text-gray-700 hover:bg-gray-50"}`}>
+                  <Icon name="truck" className="w-4 h-4" /> Ship
+                </button>
                 {staffCalls.length > 0 && (
                   <button onClick={() => { const c = staffCalls[0]; resolveStaffCall(c.id); }}
-                    className="px-5 py-2 rounded-full bg-amber-500 text-white font-bold text-sm shadow-sm animate-pulse">
-                    <Icon name="bell" className="w-4 h-4" /> {staffCalls.length} bàn gọi nhân viên — Bàn {staffCalls[0].table_name || staffCalls[0].table_id} (Đã xử lý)
+                    className="ml-auto px-5 py-2 rounded-full bg-amber-500 text-white font-bold text-sm shadow-sm animate-pulse flex items-center gap-2">
+                    <Icon name="bell" className="w-4 h-4" /> {staffCalls.length} bàn gọi nv
                   </button>
                 )}
               </div>
+              {tableFilterTab === "tables" && (
               <div className="grid md:grid-cols-5 gap-4">
-                <button onClick={() => { setSelectedTable({ id: 0, name: "Mang về", status: "takeaway" }); setCart([]); setView("menu"); }}
+                <button onClick={() => { setSelectedTable(null); setCart([]); setInitialCart([]); setCurrentOrderId(null); setView("menu"); }}
                   className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-5 text-left hover:border-orange-500 transition relative">
                   <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-orange-500"></div>
                   <div className="font-black text-orange-600 text-base mb-3">ORDER NHANH</div>
@@ -1124,16 +1144,97 @@ function PosApp({ user, onLogout }) {
                   );
                 })}
               </div>
+              )}
+
+              {tableFilterTab === "takeaway" && (
+                <div>
+                  {(() => {
+                    const takeawayOrders = orders.filter(o => o._kind === "takeaway");
+                    return takeawayOrders.length === 0 ? (
+                      <div className="text-center py-16 text-gray-400">Chưa có đơn mang về nào</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {takeawayOrders.map((o) => {
+                          const displayName = `${o.display_code || ("mv" + o.id)} - ${o.customer_name || "Khách"}`;
+                          const statusColor = o.status === "completed" || o.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700";
+                          const statusLabel = o.status === "completed" || o.status === "paid" ? "Hoàn tất" : "Chờ";
+                          return (
+                            <div key={`takeaway-${o.id}`} className="bg-white p-3 rounded-lg border border-orange-200 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs px-2 py-1 rounded-full font-medium bg-orange-100 text-orange-700">MV</span>
+                                <div>
+                                  <div className="font-semibold">{displayName}</div>
+                                  <div className="text-xs text-gray-500">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold text-orange-600">{formatVND(o.total_amount ?? o.total)}</span>
+                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
+                                {o.status !== "completed" && (
+                                  <button onClick={() => setTakeawayPaymentModal({ orderId: o.id, paymentMethod: "cash" })}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700">
+                                    Hoàn tất
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {tableFilterTab === "ship" && (
+                <div>
+                  {(() => {
+                    const shipOrders = orders.filter(o => o._kind === "ship");
+                    return shipOrders.length === 0 ? (
+                      <div className="text-center py-16 text-gray-400">Chưa có đơn ship nào</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {shipOrders.map((o) => {
+                          const displayName = `${o.display_code || ("ship" + o.id)} - ${o.customer_name || "Khách"}`;
+                          const statusColor = o.status === "completed" || o.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700";
+                          const statusLabel = o.status === "completed" || o.status === "paid" ? "Hoàn tất" : "Chờ";
+                          return (
+                            <div key={`ship-${o.id}`} className="bg-white p-3 rounded-lg border border-blue-200 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs px-2 py-1 rounded-full font-medium bg-blue-100 text-blue-700">SHIP</span>
+                                <div>
+                                  <div className="font-semibold">{displayName}</div>
+                                  <div className="text-xs text-gray-500">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold text-blue-600">{formatVND(o.total_amount ?? o.total)}</span>
+                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
+                                {o.status !== "completed" && (
+                                  <button onClick={() => setTakeawayPaymentModal({ orderId: o.id, paymentMethod: "cash" })}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700">
+                                    Hoàn tất
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </>
           )}
 
-          {view === "menu" && selectedTable && (
+          {view === "menu" && (
             <>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <button onClick={() => { setSelectedTable(null); setView("tables"); setCart([]);  }}
                     className="text-sm text-gray-500 hover:text-gray-900 mb-1 flex items-center gap-1"><Icon name="arrow-left" className="w-4 h-4" /> Quay lại</button>
-                  <h2 className="text-xl font-bold">Bàn: {selectedTable.name}</h2>
+                  <h2 className="text-xl font-bold">{selectedTable ? `Bàn: ${selectedTable.name}` : "Order nhanh"}</h2>
                 </div>
                 <input type="search" placeholder="Tìm món..." value={search} data-focus-key="menu-search"
                   onChange={(e) => setSearch(e.target.value)}
@@ -1231,49 +1332,6 @@ function PosApp({ user, onLogout }) {
             </>
           )}
 
-          {view === "orders" && (
-            <>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">Đơn hàng gần đây</h2>
-                <button onClick={() => loadOrders()} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700">Làm mới</button>
-              </div>
-              {orders.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">Chưa có đơn nào</div>
-              ) : (
-                <div className="space-y-2">
-                  {orders.map((o) => {
-                    const isTakeaway = o._kind === "takeaway";
-                    const displayName = isTakeaway
-                      ? `${o.display_code || ("mv" + o.id)} - ${o.customer_name || "Khách"}`
-                      : `#${o.id} - ${o.table_name || "Mang đi"}`;
-                    const statusColor = o.status === "completed" || o.status === "paid"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-yellow-100 text-yellow-700";
-                    const statusLabel = o.status === "completed" || o.status === "paid" ? "Hoàn tất" : "Chờ";
-                    return (
-                      <div key={`${o._kind}-${o.id}`} className="bg-white p-3 rounded-lg border border-gray-200 flex items-center justify-between">
-                        <div>
-                          <div className="font-semibold">{displayName}</div>
-                          <div className="text-xs text-gray-500">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-bold text-orange-600">{formatVND(o.total_amount ?? o.total)}</span>
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
-                          {isTakeaway && o.status !== "completed" && (
-                            <button onClick={() => setTakeawayPaymentModal({ orderId: o.id, paymentMethod: "cash" })}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700">
-                              Hoàn tất
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-
           {view === "admin" && user?.role === "admin" && (
             <div className="flex-1 animate-in fade-in zoom-in-95 duration-500 overflow-hidden h-full">
               <AdminPanel embedded onExit={() => setView("tables")} />
@@ -1282,7 +1340,7 @@ function PosApp({ user, onLogout }) {
         </div>
         )}
 
-        {view === "menu" && selectedTable && (
+        {view === "menu" && (
           <aside className="w-80 bg-white border-l flex flex-col shadow-2xl z-10 h-full min-h-0">
             {/* Header */}
             <div className="p-3 border-b">
@@ -1295,7 +1353,7 @@ function PosApp({ user, onLogout }) {
               </div>
               <div className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-gray-100 bg-gray-50 px-2.5 py-2">
                 <div className="min-w-0">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider">Bàn phục vụ</p>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider">{selectedTable ? "Bàn phục vụ" : "Đơn hàng"}</p>
                   <p className="text-xs font-black text-gray-800 truncate">
                     {selectedTable ? `${selectedTable.name} — Vị trí ${selectedPosition}` : "Tại quầy"}
                   </p>
@@ -2308,10 +2366,17 @@ function PublicMenuView({ tableId, onLogout }) {
   }, 0);
   const cartCount = cart.reduce((s, it) => s + it.quantity, 0);
 
-  // Submit order
+  // Submit order — optimistic: chuyển sang "Đơn của tôi" ngay, BE chạy nền + retry tối đa 3 lần
   const submitOrder = async () => {
     if (cart.length === 0) { addToast("Vui lòng chọn ít nhất 1 món"); return; }
     setIsOrdering(true);
+    // Optimistic: chuyển giao diện ngay
+    try { localStorage.removeItem(CART_PREFIX + tableId); } catch {}
+    setCart([]); setRequestToken(null);
+    setShowCartModal(false); setActiveView("myorder");
+    setIsOrdering(false);
+
+    // Gửi đơn nền + retry tối đa 3 lần
     const sessionId = localStorage.getItem(SESSION_PREFIX + tableId);
     const orderData = {
       table_id: tableId, table_position: "A",
@@ -2323,45 +2388,43 @@ function PublicMenuView({ tableId, onLogout }) {
       })),
     };
     if (sessionId) orderData.customer_session_id = sessionId;
-    try {
-      const res = await fetch("/api/public/orders", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderData),
-      });
-      if (!res.ok) {
-        let data; try { data = await res.json(); } catch { data = {}; }
-        if (res.status === 409 || res.status === 403) {
-          try { localStorage.removeItem(SESSION_PREFIX + tableId); } catch {}
-          setShowGroupModal(true);
-          setShowCartModal(false);
-          setTableState({ has_pending_order: true, customer_session_id: null });
-          setLastSubmitNetworkFailed(false);
-          addToast(data.message || "Phiên đặt món đã hết hạn");
-          setIsOrdering(false);
-          return;
+
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch("/api/public/orders", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(orderData),
+        });
+        if (!res.ok) {
+          let data; try { data = await res.json(); } catch { data = {}; }
+          // Phiên hết hạn → hiện modal chọn nhóm, không retry
+          if (res.status === 409 || res.status === 403) {
+            try { localStorage.removeItem(SESSION_PREFIX + tableId); } catch {}
+            setShowGroupModal(true);
+            setTableState({ has_pending_order: true, customer_session_id: null });
+            setLastSubmitNetworkFailed(false);
+            addToast(data.message || "Phiên đặt món đã hết hạn");
+            return;
+          }
+          // Lỗi server khác → retry
+          lastErr = data.message || "Lỗi gửi đơn";
+          continue;
         }
-        newRequestToken();
+        const data = await res.json();
+        if (data.customer_session_id) localStorage.setItem(SESSION_PREFIX + tableId, data.customer_session_id);
         setLastSubmitNetworkFailed(false);
-        addToast(data.message || "Lỗi gửi đơn");
-        setIsOrdering(false);
+        addToast("Đã gửi đơn hàng thành công!");
         return;
+      } catch (err) {
+        setLastSubmitNetworkFailed(true);
+        lastErr = "Mạng không ổn định";
       }
-      const data = await res.json();
-      if (data.customer_session_id) localStorage.setItem(SESSION_PREFIX + tableId, data.customer_session_id);
-      setOrderSuccess(true);
-      setIsOrdering(false);
-      setLastSubmitNetworkFailed(false);
-      setTimeout(() => {
-        try { localStorage.removeItem(CART_PREFIX + tableId); } catch {}
-        setCart([]); setRequestToken(null); setOrderSuccess(false);
-        setShowCartModal(false); setActiveView("myorder");
-        // Trigger items fetch by setting up
-      }, 2000);
-    } catch (err) {
-      setIsOrdering(false);
-      setLastSubmitNetworkFailed(true);
-      addToast("Mạng không ổn định, vui lòng thử lại. Đơn sẽ không bị gửi trùng.");
     }
+    // Quá 3 lần thất bại → thông báo lỗi
+    newRequestToken();
+    setLastSubmitNetworkFailed(false);
+    addToast("Không gửi được đơn sau 3 lần thử: " + lastErr + ". Vui lòng liên hệ nhân viên.");
   };
 
   const deleteItem = async (orderId, itemId) => {
@@ -2575,7 +2638,7 @@ function PublicMenuView({ tableId, onLogout }) {
 
 // ============ Kitchen / Counter View ============
 
-const KITCHEN_POLL_INTERVAL_MS = 5000; // 5s polling (Workers don't support SSE)
+const KITCHEN_POLL_INTERVAL_MS = 2000; // 2s polling (Workers don't support SSE)
 
 function KitchenView({ unit, onLogout, fill = "screen" }) {
   const [orders, setOrders] = useState([]);
@@ -4961,6 +5024,132 @@ function AdminPanel({ embedded = false, onExit }) {
   const [showTableModal, setShowTableModal] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
   const [tableName, setTableName] = useState("");
+  // ---- QR modal state
+  const [qrTable, setQrTable] = useState(null);
+  const qrContainerRef = useRef(null);
+  useEffect(() => {
+    if (!qrTable || !qrContainerRef.current || typeof window.qrcode === "undefined") return;
+    const url = `${window.location.origin}/menu/${qrTable.id}`;
+    const qr = window.qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+    qrContainerRef.current.innerHTML = qr.createSvgTag(5, 0);
+    const svg = qrContainerRef.current.querySelector("svg");
+    if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; }
+  }, [qrTable]);
+  const downloadQR = useCallback((table) => {
+    if (typeof window.qrcode === "undefined") return;
+    const url = `${window.location.origin}/menu/${table.id}`;
+    const qr = window.qrcode(0, "M");
+    qr.addData(url);
+    qr.make();
+    const moduleCount = qr.getModuleCount();
+    const scale = 10;
+    const padding = 40;
+    const canvas = document.createElement("canvas");
+    const totalSize = moduleCount * scale + padding * 2;
+    canvas.width = totalSize;
+    canvas.height = totalSize + 60;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#000000";
+    for (let row = 0; row < moduleCount; row++) {
+      for (let col = 0; col < moduleCount; col++) {
+        if (qr.isDark(row, col)) {
+          ctx.fillRect(col * scale + padding, row * scale + padding, scale, scale);
+        }
+      }
+    }
+    ctx.fillStyle = "#1f2937";
+    ctx.bold = true;
+    ctx.font = "bold 24px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(table.name, canvas.width / 2, totalSize + 30);
+    const link = document.createElement("a");
+    link.download = `QR-${table.name.replace(/\s+/g, "-")}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }, []);
+
+  // Tải tất cả QR — trang A6, 6 bàn/trang (2x3 grid)
+  const downloadAllQR = useCallback(() => {
+    if (typeof window.qrcode === "undefined" || !tables || tables.length === 0) return;
+    const COLS = 2, ROWS = 3, PER_PAGE = COLS * ROWS;
+    // A6 @ 300 DPI: 105mm x 148.5mm
+    const PW = Math.round(105 / 25.4 * 300);
+    const PH = Math.round(148.5 / 25.4 * 300);
+    const CELL_W = PW / COLS, CELL_H = PH / ROWS;
+    // Layout from cell top: total content = QR_SIZE + 2 gaps + fonts ≈ 490px, fits in CELL_H=584
+    const QR_SIZE = Math.round(CELL_W * 0.22);
+    const QR_FONT = Math.round(CELL_W * 0.1);
+    const NAME_FONT = Math.round(CELL_W * 0.085);
+    const GAP = 10;
+    const TOP_PAD = Math.round(CELL_H * 0.1); // 10% top padding per cell
+    // Append takeaway QR as the last item
+    const allItems = [...tables, { id: "__takeaway__", name: "Mang Về", _isTakeaway: true }];
+    const pages = [];
+    for (let i = 0; i < allItems.length; i += PER_PAGE) {
+      pages.push(allItems.slice(i, i + PER_PAGE));
+    }
+    pages.forEach((page, pageIdx) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = PW; canvas.height = PH;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, PW, PH);
+      page.forEach((table, idx) => {
+        const col = idx % COLS, row = Math.floor(idx / COLS);
+        const cx = col * CELL_W + CELL_W / 2;
+        const cellTop = row * CELL_H;
+        const qrY = cellTop + TOP_PAD;
+        const qrX = cx - QR_SIZE / 2;
+        const qr = window.qrcode(0, "M");
+        const qrUrl = table._isTakeaway
+          ? `${window.location.origin}/takeaway`
+          : `${window.location.origin}/menu/${table.id}`;
+        qr.addData(qrUrl);
+        qr.make();
+        const moduleCount = qr.getModuleCount();
+        const scale = QR_SIZE / moduleCount;
+        // Draw QR modules
+        ctx.fillStyle = "#1f2937";
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            if (qr.isDark(r, c)) {
+              ctx.fillRect(qrX + c * scale, qrY + r * scale, Math.ceil(scale), Math.ceil(scale));
+            }
+          }
+        }
+        // Draw finder patterns (corners)
+        ctx.fillStyle = "#1f2937";
+        const fSize = Math.round(7 * scale);
+        const fCell = Math.round(scale);
+        [[qrX, qrY], [qrX + QR_SIZE - fSize, qrY], [qrX, qrY + QR_SIZE - fSize]].forEach(([fx, fy]) => {
+          ctx.fillRect(fx, fy, fSize, fSize);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(fx + fCell * 1.5, fy + fCell * 1.5, fSize - fCell * 3, fSize - fCell * 3);
+          ctx.fillStyle = "#1f2937";
+          ctx.fillRect(fx + fCell * 2.5, fy + fCell * 2.5, fSize - fCell * 5, fSize - fCell * 5);
+        });
+        // Label
+        ctx.fillStyle = "#1f2937";
+        ctx.font = `bold ${QR_FONT}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(table._isTakeaway ? "Quét Gọi Món Mang Về" : "Quét Gọi Món", cx, qrY + QR_SIZE + GAP);
+        // Table name / takeaway label
+        ctx.font = `bold ${NAME_FONT}px sans-serif`;
+        ctx.fillStyle = table._isTakeaway ? "#c2410c" : "#6b7280";
+        ctx.fillText(table._isTakeaway ? "Mang Về - Tại Quầy" : table.name, cx, qrY + QR_SIZE + GAP + QR_FONT + 4);
+      });
+      // Page separator / download
+      const link = document.createElement("a");
+      link.download = `QR-All-${pageIdx + 1}-of-${pages.length}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    });
+  }, [tables]);
 
   // ---- Product modal state
   const [showProductModal, setShowProductModal] = useState(false);
@@ -5376,6 +5565,14 @@ function AdminPanel({ embedded = false, onExit }) {
                 <Icon name="plus" className="w-5 h-5" />
                 <span className="uppercase text-xs md:text-sm tracking-widest">Thêm {tab === "products" ? "món" : tab === "tables" ? "bàn" : tab === "categories" ? "mục" : "NV"}</span>
               </button>
+              {tab === "tables" && (
+                <button onClick={downloadAllQR}
+                  className="w-full md:w-auto bg-emerald-600 text-white px-4 md:px-6 lg:px-8 py-3 md:py-4 rounded-xl md:rounded-[1.5rem] font-black flex items-center justify-center space-x-2 md:space-x-3 shadow-lg md:shadow-2xl shadow-emerald-200 lg:hover:scale-105 transition-transform"
+                >
+                  <Icon name="download" className="w-5 h-5" />
+                  <span className="uppercase text-xs md:text-sm tracking-widest">Tải tất cả QR</span>
+                </button>
+              )}
             </div>
           )}
           {tab === "orders" && <div className="w-[180px]"></div>}
@@ -5506,6 +5703,7 @@ function AdminPanel({ embedded = false, onExit }) {
                       <td className="p-3 md:p-6 font-black text-gray-800 text-sm md:text-lg">{t.name}</td>
                       <td className="p-2 md:p-6 text-right">
                         <div className="flex justify-end space-x-1 md:space-x-3">
+                          <button onClick={() => setQrTable(t)} className="p-2 md:p-3 text-emerald-500 hover:bg-emerald-50 rounded-lg md:rounded-xl transition-all" title="Tải QR Code"><Icon name="download" className="w-4 h-4 md:w-5 md:h-5" /></button>
                           <button onClick={() => editTable(t)} className="p-2 md:p-3 text-blue-500 hover:bg-blue-50 rounded-lg md:rounded-xl transition-all"><Icon name="pencil" className="w-4 h-4 md:w-5 md:h-5" /></button>
                           <button onClick={() => deleteTable(t.id)} className="p-2 md:p-3 text-red-500 hover:bg-red-50 rounded-lg md:rounded-xl transition-all"><Icon name="trash-2" className="w-4 h-4 md:w-5 md:h-5" /></button>
                         </div>
@@ -5985,6 +6183,32 @@ function AdminPanel({ embedded = false, onExit }) {
               <button onClick={() => setShowTableModal(false)} className="flex-1 py-4 bg-white border-2 border-gray-200 text-gray-800 rounded-2xl font-black text-xs uppercase hover:bg-gray-100 transition-all">Hủy</button>
               <button onClick={handleSaveTable} className="flex-1 py-4 bg-primary-600 text-white rounded-2xl font-black text-xs uppercase shadow-xl shadow-primary-200 hover:bg-primary-700 transition-all">
                 {editingTable ? "Cập nhật" : "Thêm bàn"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR Code Modal */}
+      {qrTable && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setQrTable(null)}></div>
+          <div className="relative bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b bg-gray-50 flex items-center justify-between">
+              <h3 className="text-lg font-black text-gray-800">QR Code — {qrTable.name}</h3>
+              <button onClick={() => setQrTable(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <Icon name="x" className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col items-center gap-4">
+              <div ref={qrContainerRef} className="w-56 h-56 flex items-center justify-center bg-white border border-gray-100 rounded-2xl shadow-inner p-2"></div>
+              <p className="text-xs text-gray-500 font-bold text-center break-all px-2">{window.location.origin}/menu/{qrTable.id}</p>
+              <p className="text-[10px] text-gray-400 font-bold text-center">Khách quét mã QR này để gọi món tại {qrTable.name}</p>
+            </div>
+            <div className="p-6 bg-gray-50 border-t flex space-x-3">
+              <button onClick={() => setQrTable(null)} className="flex-1 py-3 bg-white border-2 border-gray-200 text-gray-800 rounded-2xl font-black text-xs uppercase hover:bg-gray-100 transition-all">Đóng</button>
+              <button onClick={() => downloadQR(qrTable)} className="flex-1 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                <Icon name="download" className="w-4 h-4" /> Tải PNG
               </button>
             </div>
           </div>

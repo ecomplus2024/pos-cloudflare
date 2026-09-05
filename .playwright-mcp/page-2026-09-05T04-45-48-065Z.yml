@@ -1,0 +1,19 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - button "POS" [ref=f5e5] [cursor=pointer]
+    - generic [ref=f5e11]:
+      - button "Bếp" [ref=f5e12] [cursor=pointer]
+      - button "Pha chế" [ref=f5e15] [cursor=pointer]
+    - button "Cài đặt" [ref=f5e20] [cursor=pointer]
+  - generic [ref=f5e26]:
+    - generic [ref=f5e27]:
+      - button "Sơ đồ bàn" [ref=f5e28] [cursor=pointer]
+      - button "Mang về" [ref=f5e34] [cursor=pointer]
+      - button "Ship" [ref=f5e38] [cursor=pointer]
+    - generic [ref=f5e44]:
+      - button "ORDER NHANH MANG VỀ / TẠI QUẦY" [ref=f5e45] [cursor=pointer]:
+        - generic [ref=f5e47]: ORDER NHANH
+        - generic [ref=f5e54]: MANG VỀ / TẠI QUẦY
+      - button "ĐƠN SHIP GIAO HÀNG" [ref=f5e55] [cursor=pointer]:
+        - generic [ref=f5e57]: ĐƠN SHIP
+        - generic [ref=f5e64]: GIAO HÀNG

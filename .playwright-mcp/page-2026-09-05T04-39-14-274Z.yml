@@ -1,0 +1,13 @@
+- generic [ref=f3e4]:
+  - generic [ref=f3e5]:
+    - heading "F&B POS" [level=1] [ref=f3e11]
+    - paragraph [ref=f3e12]: Đăng nhập để bắt đầu phiên làm việc
+  - generic [ref=f3e13]:
+    - generic [ref=f3e14]:
+      - generic [ref=f3e15]: Tên đăng nhập
+      - textbox "admin" [active] [ref=f3e16]
+    - generic [ref=f3e17]:
+      - generic [ref=f3e18]: Mật khẩu
+      - textbox "••••••••" [ref=f3e19]
+    - button "Đăng Nhập" [ref=f3e20] [cursor=pointer]
+  - generic [ref=f3e21]: © 2026 Premium POS System

@@ -1,0 +1,155 @@
+- generic [ref=f3e22]:
+  - complementary [ref=f3e23]:
+    - button "POS" [ref=f3e24] [cursor=pointer]
+    - generic [ref=f3e30]:
+      - button "Bếp" [ref=f3e31] [cursor=pointer]
+      - button "Pha chế" [ref=f3e34] [cursor=pointer]
+    - button "Cài đặt" [active] [ref=f3e39] [cursor=pointer]
+  - generic [ref=f3e145]:
+    - complementary [ref=f3e146]:
+      - heading "Cài đặt" [level=1] [ref=f3e152]
+      - navigation [ref=f3e153]:
+        - button "Sản phẩm" [ref=f3e154] [cursor=pointer]
+        - button "Danh sách Bàn" [ref=f3e160] [cursor=pointer]
+        - button "Danh mục" [ref=f3e164] [cursor=pointer]
+        - button "Đơn hàng" [ref=f3e171] [cursor=pointer]
+        - button "Tài khoản" [ref=f3e176] [cursor=pointer]
+        - button "Cấu hình chung" [ref=f3e183] [cursor=pointer]
+        - button "Báo cáo" [ref=f3e188] [cursor=pointer]
+    - main [ref=f3e191]:
+      - generic [ref=f3e192]:
+        - generic [ref=f3e193]:
+          - heading "Sản phẩm" [level=2] [ref=f3e194]
+          - paragraph [ref=f3e195]: Cập nhật và theo dõi các thông số hệ thống
+        - button "Thêm món" [ref=f3e197] [cursor=pointer]
+      - generic [ref=f3e200]:
+        - generic [ref=f3e201]:
+          - button "Đang kinh doanh" [ref=f3e202] [cursor=pointer]
+          - button "Tạm ngưng" [ref=f3e203] [cursor=pointer]
+        - generic [ref=f3e204]:
+          - textbox "Tìm theo tên sản phẩm" [ref=f3e205]
+          - combobox [ref=f3e206]:
+            - option "Tất cả danh mục" [selected]
+            - option "Cà phê"
+            - option "Trà sữa"
+            - option "Nước ép"
+            - option "Bánh ngọt"
+            - option "Topping"
+      - table [ref=f3e209]:
+        - rowgroup [ref=f3e210]:
+          - row [ref=f3e211]:
+            - columnheader "Món" [ref=f3e212]
+            - columnheader "Danh mục" [ref=f3e213]
+            - columnheader "Giá" [ref=f3e214]
+            - columnheader "Hành động" [ref=f3e215]
+        - rowgroup [ref=f3e216]:
+          - row [ref=f3e217]:
+            - cell "Cà phê đen Cà phê đen" [ref=f3e218]:
+              - generic [ref=f3e219]:
+                - img "Cà phê đen" [ref=f3e221]
+                - generic [ref=f3e222]: Cà phê đen
+            - cell "Cà phê" [ref=f3e224]
+            - cell "25,000đ" [ref=f3e225]
+            - cell [ref=f3e226]:
+              - generic [ref=f3e227]:
+                - button "Chỉnh sửa" [ref=f3e228] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e232] [cursor=pointer]
+          - row [ref=f3e235]:
+            - cell "Cà phê sữa đá Cà phê sữa đá" [ref=f3e236]:
+              - generic [ref=f3e237]:
+                - img "Cà phê sữa đá" [ref=f3e239]
+                - generic [ref=f3e240]: Cà phê sữa đá
+            - cell "Cà phê" [ref=f3e242]
+            - cell "30,000đ" [ref=f3e243]
+            - cell [ref=f3e244]:
+              - generic [ref=f3e245]:
+                - button "Chỉnh sửa" [ref=f3e246] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e250] [cursor=pointer]
+          - row [ref=f3e253]:
+            - cell "Bạc xỉu Bạc xỉu" [ref=f3e254]:
+              - generic [ref=f3e255]:
+                - img "Bạc xỉu" [ref=f3e257]
+                - generic [ref=f3e258]: Bạc xỉu
+            - cell "Cà phê" [ref=f3e260]
+            - cell "35,000đ" [ref=f3e261]
+            - cell [ref=f3e262]:
+              - generic [ref=f3e263]:
+                - button "Chỉnh sửa" [ref=f3e264] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e268] [cursor=pointer]
+          - row [ref=f3e271]:
+            - cell "Trà sữa trân châu Trà sữa trân châu" [ref=f3e272]:
+              - generic [ref=f3e273]:
+                - img "Trà sữa trân châu" [ref=f3e275]
+                - generic [ref=f3e276]: Trà sữa trân châu
+            - cell "Trà sữa" [ref=f3e278]
+            - cell "45,000đ" [ref=f3e279]
+            - cell [ref=f3e280]:
+              - generic [ref=f3e281]:
+                - button "Chỉnh sửa" [ref=f3e282] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e286] [cursor=pointer]
+          - row [ref=f3e289]:
+            - cell "Trà đào cam sả Trà đào cam sả" [ref=f3e290]:
+              - generic [ref=f3e291]:
+                - img "Trà đào cam sả" [ref=f3e293]
+                - generic [ref=f3e294]: Trà đào cam sả
+            - cell "Trà sữa" [ref=f3e296]
+            - cell "40,000đ" [ref=f3e297]
+            - cell [ref=f3e298]:
+              - generic [ref=f3e299]:
+                - button "Chỉnh sửa" [ref=f3e300] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e304] [cursor=pointer]
+          - row [ref=f3e307]:
+            - cell "Nước ép cam Nước ép cam" [ref=f3e308]:
+              - generic [ref=f3e309]:
+                - img "Nước ép cam" [ref=f3e311]
+                - generic [ref=f3e312]: Nước ép cam
+            - cell "Nước ép" [ref=f3e314]
+            - cell "35,000đ" [ref=f3e315]
+            - cell [ref=f3e316]:
+              - generic [ref=f3e317]:
+                - button "Chỉnh sửa" [ref=f3e318] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e322] [cursor=pointer]
+          - row [ref=f3e325]:
+            - cell "Bánh croissant Bánh croissant" [ref=f3e326]:
+              - generic [ref=f3e327]:
+                - img "Bánh croissant" [ref=f3e329]
+                - generic [ref=f3e330]: Bánh croissant
+            - cell "Bánh ngọt" [ref=f3e332]
+            - cell "25,000đ" [ref=f3e333]
+            - cell [ref=f3e334]:
+              - generic [ref=f3e335]:
+                - button "Chỉnh sửa" [ref=f3e336] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e340] [cursor=pointer]
+          - row [ref=f3e343]:
+            - cell "Trân châu trắng TOPPING" [ref=f3e344]:
+              - generic [ref=f3e351]:
+                - generic [ref=f3e352]: Trân châu trắng
+                - generic [ref=f3e353]: TOPPING
+            - cell "Topping" [ref=f3e354]
+            - cell "5,000đ" [ref=f3e355]
+            - cell [ref=f3e356]:
+              - generic [ref=f3e357]:
+                - button "Chỉnh sửa" [ref=f3e358] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e362] [cursor=pointer]
+          - row [ref=f3e365]:
+            - cell "Trân châu đen TOPPING" [ref=f3e366]:
+              - generic [ref=f3e373]:
+                - generic [ref=f3e374]: Trân châu đen
+                - generic [ref=f3e375]: TOPPING
+            - cell "Topping" [ref=f3e376]
+            - cell "5,000đ" [ref=f3e377]
+            - cell [ref=f3e378]:
+              - generic [ref=f3e379]:
+                - button "Chỉnh sửa" [ref=f3e380] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e384] [cursor=pointer]
+          - row [ref=f3e387]:
+            - cell "Thạch dừa TOPPING" [ref=f3e388]:
+              - generic [ref=f3e395]:
+                - generic [ref=f3e396]: Thạch dừa
+                - generic [ref=f3e397]: TOPPING
+            - cell "Topping" [ref=f3e398]
+            - cell "6,000đ" [ref=f3e399]
+            - cell [ref=f3e400]:
+              - generic [ref=f3e401]:
+                - button "Chỉnh sửa" [ref=f3e402] [cursor=pointer]
+                - button "Tạm ngưng" [ref=f3e406] [cursor=pointer]

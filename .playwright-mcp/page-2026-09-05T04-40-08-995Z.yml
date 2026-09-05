@@ -1,0 +1,142 @@
+- generic [ref=f3e22]:
+  - complementary [ref=f3e23]:
+    - button "POS" [ref=f3e24] [cursor=pointer]
+    - generic [ref=f3e30]:
+      - button "Bếp" [ref=f3e31] [cursor=pointer]
+      - button "Pha chế" [ref=f3e34] [cursor=pointer]
+    - button "Cài đặt" [ref=f3e39] [cursor=pointer]
+  - generic [ref=f3e145]:
+    - complementary [ref=f3e146]:
+      - heading "Cài đặt" [level=1] [ref=f3e152]
+      - navigation [ref=f3e153]:
+        - button "Sản phẩm" [ref=f3e154] [cursor=pointer]
+        - button "Danh sách Bàn" [active] [ref=f3e160] [cursor=pointer]
+        - button "Danh mục" [ref=f3e164] [cursor=pointer]
+        - button "Đơn hàng" [ref=f3e171] [cursor=pointer]
+        - button "Tài khoản" [ref=f3e176] [cursor=pointer]
+        - button "Cấu hình chung" [ref=f3e183] [cursor=pointer]
+        - button "Báo cáo" [ref=f3e188] [cursor=pointer]
+    - main [ref=f3e191]:
+      - generic [ref=f3e192]:
+        - generic [ref=f3e193]:
+          - heading "Bàn" [level=2] [ref=f3e409]
+          - paragraph [ref=f3e195]: Cập nhật và theo dõi các thông số hệ thống
+        - button "Thêm bàn" [ref=f3e410] [cursor=pointer]
+      - table [ref=f3e209]:
+        - rowgroup [ref=f3e210]:
+          - row [ref=f3e411]:
+            - columnheader "Tên Bàn" [ref=f3e412]
+            - columnheader "Hành động" [ref=f3e413]
+        - rowgroup [ref=f3e216]:
+          - row [ref=f3e414]:
+            - cell "Bàn 1" [ref=f3e415]
+            - cell [ref=f3e416]:
+              - generic [ref=f3e417]:
+                - button "Tải QR Code" [ref=f3e418] [cursor=pointer]
+                - button [ref=f3e422] [cursor=pointer]
+                - button [ref=f3e426] [cursor=pointer]
+          - row [ref=f3e430]:
+            - cell "Bàn 2" [ref=f3e431]
+            - cell [ref=f3e432]:
+              - generic [ref=f3e433]:
+                - button "Tải QR Code" [ref=f3e434] [cursor=pointer]
+                - button [ref=f3e438] [cursor=pointer]
+                - button [ref=f3e442] [cursor=pointer]
+          - row [ref=f3e446]:
+            - cell "Bàn 3" [ref=f3e447]
+            - cell [ref=f3e448]:
+              - generic [ref=f3e449]:
+                - button "Tải QR Code" [ref=f3e450] [cursor=pointer]
+                - button [ref=f3e454] [cursor=pointer]
+                - button [ref=f3e458] [cursor=pointer]
+          - row [ref=f3e462]:
+            - cell "Bàn 4" [ref=f3e463]
+            - cell [ref=f3e464]:
+              - generic [ref=f3e465]:
+                - button "Tải QR Code" [ref=f3e466] [cursor=pointer]
+                - button [ref=f3e470] [cursor=pointer]
+                - button [ref=f3e474] [cursor=pointer]
+          - row [ref=f3e478]:
+            - cell "Bàn 5" [ref=f3e479]
+            - cell [ref=f3e480]:
+              - generic [ref=f3e481]:
+                - button "Tải QR Code" [ref=f3e482] [cursor=pointer]
+                - button [ref=f3e486] [cursor=pointer]
+                - button [ref=f3e490] [cursor=pointer]
+          - row [ref=f3e494]:
+            - cell "Bàn 6" [ref=f3e495]
+            - cell [ref=f3e496]:
+              - generic [ref=f3e497]:
+                - button "Tải QR Code" [ref=f3e498] [cursor=pointer]
+                - button [ref=f3e502] [cursor=pointer]
+                - button [ref=f3e506] [cursor=pointer]
+          - row [ref=f3e510]:
+            - cell "Bàn 7" [ref=f3e511]
+            - cell [ref=f3e512]:
+              - generic [ref=f3e513]:
+                - button "Tải QR Code" [ref=f3e514] [cursor=pointer]
+                - button [ref=f3e518] [cursor=pointer]
+                - button [ref=f3e522] [cursor=pointer]
+          - row [ref=f3e526]:
+            - cell "Bàn 8" [ref=f3e527]
+            - cell [ref=f3e528]:
+              - generic [ref=f3e529]:
+                - button "Tải QR Code" [ref=f3e530] [cursor=pointer]
+                - button [ref=f3e534] [cursor=pointer]
+                - button [ref=f3e538] [cursor=pointer]
+          - row [ref=f3e542]:
+            - cell "Bàn 1" [ref=f3e543]
+            - cell [ref=f3e544]:
+              - generic [ref=f3e545]:
+                - button "Tải QR Code" [ref=f3e546] [cursor=pointer]
+                - button [ref=f3e550] [cursor=pointer]
+                - button [ref=f3e554] [cursor=pointer]
+          - row [ref=f3e558]:
+            - cell "Bàn 2" [ref=f3e559]
+            - cell [ref=f3e560]:
+              - generic [ref=f3e561]:
+                - button "Tải QR Code" [ref=f3e562] [cursor=pointer]
+                - button [ref=f3e566] [cursor=pointer]
+                - button [ref=f3e570] [cursor=pointer]
+          - row [ref=f3e574]:
+            - cell "Bàn 3" [ref=f3e575]
+            - cell [ref=f3e576]:
+              - generic [ref=f3e577]:
+                - button "Tải QR Code" [ref=f3e578] [cursor=pointer]
+                - button [ref=f3e582] [cursor=pointer]
+                - button [ref=f3e586] [cursor=pointer]
+          - row [ref=f3e590]:
+            - cell "Bàn 4" [ref=f3e591]
+            - cell [ref=f3e592]:
+              - generic [ref=f3e593]:
+                - button "Tải QR Code" [ref=f3e594] [cursor=pointer]
+                - button [ref=f3e598] [cursor=pointer]
+                - button [ref=f3e602] [cursor=pointer]
+          - row [ref=f3e606]:
+            - cell "Bàn 5" [ref=f3e607]
+            - cell [ref=f3e608]:
+              - generic [ref=f3e609]:
+                - button "Tải QR Code" [ref=f3e610] [cursor=pointer]
+                - button [ref=f3e614] [cursor=pointer]
+                - button [ref=f3e618] [cursor=pointer]
+          - row [ref=f3e622]:
+            - cell "Bàn 6" [ref=f3e623]
+            - cell [ref=f3e624]:
+              - generic [ref=f3e625]:
+                - button "Tải QR Code" [ref=f3e626] [cursor=pointer]
+                - button [ref=f3e630] [cursor=pointer]
+                - button [ref=f3e634] [cursor=pointer]
+          - row [ref=f3e638]:
+            - cell "Bàn 7" [ref=f3e639]
+            - cell [ref=f3e640]:
+              - generic [ref=f3e641]:
+                - button "Tải QR Code" [ref=f3e642] [cursor=pointer]
+                - button [ref=f3e646] [cursor=pointer]
+                - button [ref=f3e650] [cursor=pointer]
+          - row [ref=f3e654]:
+            - cell "Bàn 8" [ref=f3e655]
+            - cell [ref=f3e656]:
+              - generic [ref=f3e657]:
+                - button "Tải QR Code" [ref=f3e658] [cursor=pointer]
+                - button [ref=f3e662] [cursor=pointer]
+                - button [ref=f3e666] [cursor=pointer]
