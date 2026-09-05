@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Menu POS Demo</title>
     <meta name="description" content="Demo POS chạy trên Cloudflare Workers + D1" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/styles.css" />
     <style>
       /* Custom utilities cho PublicMenu (primary blue palette + animations) */
@@ -83,5 +88,26 @@
     <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
     <!-- App JSX -->
     <script type="text/babel" data-presets="react" data-type="module" src="/app.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => {
+              console.log('SW registered:', reg.scope);
+              // Listen for updates
+              reg.addEventListener('updatefound', () => {
+                const newWorker = reg.installing;
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Có bản mới — có thể show notification
+                    console.log('New SW available');
+                  }
+                });
+              });
+            })
+            .catch(err => console.error('SW registration failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>
