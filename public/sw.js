@@ -1,13 +1,8 @@
 // public/sw.js - PWA Service Worker cho POS
-const CACHE_NAME = 'pos-v1';
+const CACHE_NAME = 'pos-v3';
 
-// Precache list — tất cả resources cần thiết
+// Precache list — chỉ static files không thay đổi (JS/CSS/HTML dùng network-first)
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/app.jsx',
-  '/app.js',
-  '/styles.css',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -60,11 +55,22 @@ self.addEventListener('fetch', (event) => {
   // Skip Chrome extensions
   if (url.protocol === 'chrome-extension:') return;
 
-  // Navigation request (/)
+  // Navigation request — network-first (always fetch fresh when online)
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/index.html')
-        .then(response => response || fetch(request))
+      fetch(request)
+        .then(networkResponse => {
+          // Cache fresh copy for offline fallback
+          if (networkResponse.ok) {
+            const cloned = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(request, cloned));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          // Offline — return cached index.html
+          return caches.match('/index.html');
+        })
     );
     return;
   }
@@ -82,13 +88,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static files & CDN — cache-first
+  // Static files (JS/CSS/HTML) — network-first (always fetch fresh, fallback to cache offline)
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.html') || url.pathname === '/') {
+    event.respondWith(
+      fetch(request).then(networkResponse => {
+        if (networkResponse.ok) {
+          const cloned = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, cloned));
+        }
+        return networkResponse;
+      }).catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // CDN & other static — cache-first
   event.respondWith(
     caches.match(request)
       .then(response => {
         if (response) return response;
         return fetch(request).then(networkResponse => {
-          // Cache successful responses
           if (networkResponse.ok) {
             const cloned = networkResponse.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(request, cloned));
