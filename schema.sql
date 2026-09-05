@@ -194,6 +194,20 @@ INSERT INTO tables (name, status) VALUES
   ('Bàn 7', 'empty'),
   ('Bàn 8', 'empty');
 
+-- Zalo notification logs
+CREATE TABLE IF NOT EXISTS zalo_notification_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER,
+  order_type TEXT NOT NULL DEFAULT 'ship',
+  success INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  error_message TEXT,
+  response_message_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_zalo_logs_order ON zalo_notification_logs(order_id);
+CREATE INDEX IF NOT EXISTS idx_zalo_logs_created ON zalo_notification_logs(created_at);
+
 -- Settings
 INSERT INTO settings (key, value) VALUES ('featured_products', '[4,5,1,2]');
 INSERT INTO settings (key, value) VALUES ('facebook_url', '');

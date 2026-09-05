@@ -998,6 +998,184 @@ async function recalcOrderTotal(env, orderId) {
     ) WHERE id = ?`
   ).bind(orderId, orderId, orderId).run();
 }
+
+// ============ Zalo Bot Notifier ============
+const ZALO_DEFAULT_API_BASE = "https://bot-api.zaloplatforms.com";
+const ZALO_MAX_ATTEMPTS = 3;
+const ZALO_RETRY_BACKOFF = [1000, 2000, 4000];
+
+class ZaloBotNotifier {
+  constructor(env) {
+    this.env = env;
+    this.enabled = false;
+    this.bot_token = "";
+    this.group_chat_id = "";
+    this.api_base = ZALO_DEFAULT_API_BASE;
+  }
+
+  async _reloadConfig() {
+    try {
+      const row = await this.env.DB.prepare("SELECT value FROM settings WHERE key = 'zalo_bot'").first();
+      if (!row) return;
+      const cfg = JSON.parse(row.value);
+      this.enabled = Boolean(cfg.enabled);
+      this.bot_token = (cfg.bot_token || "").trim();
+      this.group_chat_id = (cfg.group_chat_id || "").trim();
+      this.api_base = (cfg.api_base || ZALO_DEFAULT_API_BASE).replace(/\/+$/, "");
+    } catch (e) {
+      console.warn("ZaloBotNotifier: reload config fail:", e);
+    }
+  }
+
+  isReady() {
+    return this.enabled && Boolean(this.bot_token) && Boolean(this.group_chat_id);
+  }
+
+  _formatMoney(amount) {
+    return Number(amount).toLocaleString("vi-VN") + "đ";
+  }
+
+  _formatMessage(orderData) {
+    const { display_code, customer_name, customer_phone, ship_address, latitude, longitude, items, total_amount, created_at } = orderData;
+    const timeStr = created_at
+      ? new Date(created_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })
+      : "";
+
+    const lines = [
+      `Đơn ship mới #${display_code || "N/A"}`,
+      "",
+      `Khách: ${customer_name || "(không có)"}`,
+      `SĐT: ${customer_phone || "(không có)"}`,
+      `Địa chỉ: ${ship_address || "(không có)"}`,
+    ];
+
+    if (latitude != null && longitude != null) {
+      lines.push(`GPS: https://www.google.com/maps?q=${latitude},${longitude}`);
+    }
+
+    lines.push("", "Món:");
+    for (const item of items || []) {
+      const sizeText = item.size_name ? ` size ${item.size_name}` : "";
+      const toppingTotal = (item.toppings || []).reduce((s, t) => s + (t.price || 0), 0);
+      const itemTotal = (item.price + toppingTotal) * item.quantity;
+      lines.push(`- ${item.quantity} x ${item.product_name}${sizeText} - ${this._formatMoney(itemTotal)}`);
+
+      const toppingNames = (item.toppings || []).filter(t => t.name).map(t => t.name);
+      if (toppingNames.length) lines.push(`  Topping: ${toppingNames.join(", ")}`);
+      if (item.note) lines.push(`  Ghi chú: ${item.note}`);
+    }
+
+    lines.push("", `Tổng: ${this._formatMoney(total_amount)}`);
+    if (timeStr) lines.push(`Thời gian: ${timeStr}`);
+    return lines.join("\n");
+  }
+
+  async _sendWithRetry(message) {
+    const url = `${this.api_base}/bot${this.bot_token}/sendMessage`;
+    const payload = { chat_id: this.group_chat_id, text: message };
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= ZALO_MAX_ATTEMPTS; attempt++) {
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        let data;
+        try { data = await resp.json(); } catch { data = {}; }
+
+        if (resp.ok && data.ok) {
+          return { success: true, attempts: attempt, error: null, message_id: data.result?.message_id };
+        }
+
+        // 4xx: config error — no retry
+        if (resp.status >= 400 && resp.status < 500) {
+          return { success: false, attempts: attempt, error: `HTTP ${resp.status}: ${data.description || "Unknown"}`, message_id: null };
+        }
+
+        lastError = `HTTP ${resp.status}: ${data.description || "Unknown"}`;
+      } catch (e) {
+        lastError = String(e);
+      }
+
+      if (attempt < ZALO_MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, ZALO_RETRY_BACKOFF[attempt - 1]));
+      }
+    }
+
+    return { success: false, attempts: ZALO_MAX_ATTEMPTS, error: lastError, message_id: null };
+  }
+
+  async _log(orderId, success, attempts, errorMessage, messageId) {
+    try {
+      await this.env.DB.prepare(
+        `INSERT INTO zalo_notification_logs (order_id, order_type, success, attempts, error_message, response_message_id)
+         VALUES (?, 'ship', ?, ?, ?, ?)`
+      ).bind(orderId, success ? 1 : 0, attempts, errorMessage || null, messageId || null).run();
+    } catch (e) {
+      console.warn("ZaloBotNotifier: log write fail:", e);
+    }
+  }
+
+  async notifyNewShipOrder(orderData) {
+    try {
+      await this._reloadConfig();
+      if (!this.isReady()) return;
+
+      const message = this._formatMessage(orderData);
+      const result = await this._sendWithRetry(message);
+
+      try {
+        await this._log(orderData.order_id, result.success, result.attempts, result.error, result.message_id);
+      } catch {
+        // already caught in _log
+      }
+    } catch (e) {
+      console.warn("ZaloBotNotifier: notify fail:", e);
+    }
+  }
+}
+
+async function handleZaloBotTest(env) {
+  const notifier = new ZaloBotNotifier(env);
+  await notifier._reloadConfig();
+  if (!notifier.isReady()) {
+    return json({
+      ok: false,
+      message: "Zalo Bot chưa được cấu hình hoặc đã tắt. Vui lòng bật và điền Bot Token + Group Chat ID.",
+    }, 400);
+  }
+
+  const testOrderData = {
+    order_id: 0,
+    display_code: "TEST",
+    customer_name: "Khách thử",
+    customer_phone: "0900000000",
+    ship_address: "123 Đường thử, Quận 1, TP.HCM",
+    latitude: null,
+    longitude: null,
+    items: [
+      { product_name: "Cà phê đen", price: 25000, quantity: 2, size_name: null, note: "", toppings: [] },
+      { product_name: "Trà sữa trân châu", price: 45000, quantity: 1, size_name: "L", note: "ít đá", toppings: [{ name: "Trân châu trắng", price: 5000 }] },
+    ],
+    total_amount: 95000,
+    created_at: new Date().toISOString(),
+  };
+
+  const message = notifier._formatMessage(testOrderData);
+  const result = await notifier._sendWithRetry(message);
+
+  return json({
+    ok: result.success,
+    message: result.success
+      ? "Gửi thử thành công! Kiểm tra nhóm Zalo."
+      : `Gửi thử thất bại: ${result.error}`,
+    attempts: result.attempts,
+    debug_message: message,
+  });
+}
+
 async function handleDeletePublicItem(env, orderId, itemId) {
   const item = await env.DB.prepare(
     `SELECT id, status FROM order_items WHERE id = ? AND order_id = ?`
@@ -1069,7 +1247,7 @@ async function handleCashierTakeawayList(env, statusParam) {
   const todayStart = (new Date()).toISOString().slice(0, 10);
   const statusFilter = statusParam === "completed" ? "completed" : "pending";
   const ordersResult = await env.DB.prepare(
-    `SELECT id, order_type, display_code, customer_name, total, status, payment_method, created_at
+    `SELECT id, order_type, display_code, customer_name, customer_phone, ship_address, latitude, longitude, ship_notes, total, status, payment_method, created_at
      FROM orders
      WHERE table_id IS NULL AND status = ? AND created_at >= ?
      ORDER BY created_at ASC`
@@ -1079,7 +1257,7 @@ async function handleCashierTakeawayList(env, statusParam) {
   if (orderIds.length > 0) {
     const ph = orderIds.map(() => "?").join(",");
     const itemsResult = await env.DB.prepare(
-      `SELECT oi.id, oi.order_id, oi.product_name, oi.quantity, oi.price, oi.status, oi.size_name
+      `SELECT oi.id, oi.order_id, oi.product_name, oi.quantity, oi.price, oi.status, oi.size_name, oi.note
        FROM order_items oi WHERE oi.order_id IN (${ph}) ORDER BY oi.id ASC`
     ).bind(...orderIds).all();
     const itemIds = itemsResult.results.map((i) => i.id);
@@ -1105,6 +1283,7 @@ async function handleCashierTakeawayList(env, statusParam) {
         price: it.price,
         status: it.status,
         size_name: it.size_name,
+        note: it.note,
         toppings: toppingsByItem.get(it.id) || []
       });
     }
@@ -1114,6 +1293,11 @@ async function handleCashierTakeawayList(env, statusParam) {
     order_type: o.order_type || "takeaway",
     display_code: o.display_code || `${o.order_type || "mv"}${o.id}`,
     customer_name: o.customer_name,
+    customer_phone: o.customer_phone,
+    ship_address: o.ship_address,
+    latitude: o.latitude,
+    longitude: o.longitude,
+    ship_notes: o.ship_notes,
     total_amount: o.total,
     status: o.status,
     payment_method: o.payment_method,
@@ -1150,6 +1334,8 @@ async function handleGetSettings(env) {
       settings[row.key] = row.value;
     }
   }
+  // Không trả zalo_bot qua public endpoint (tránh rò rỉ token)
+  delete settings.zalo_bot;
   return json(settings);
 }
 async function handleTakeawayMenu(env) {
@@ -1485,7 +1671,7 @@ async function handleShipMenu(env) {
     products
   });
 }
-async function handleCreateShipOrder(env, body) {
+async function handleCreateShipOrder(env, body, ctx) {
   if (!await isShipEnabled(env)) return shipDisabledResponse(env);
   if (!body.client_id || !body.items?.length) {
     return json({ message: "Thieu thong tin" }, 400);
@@ -1634,6 +1820,54 @@ async function handleCreateShipOrder(env, body) {
   }
   await recalcOrderTotal(env, order.id);
   const finalTotal = (await env.DB.prepare("SELECT total FROM orders WHERE id = ?").bind(order.id).first())?.total ?? 0;
+
+  // Zalo notification — fire-and-forget (chỉ khi tạo đơn mới)
+  if (isNewOrder) {
+    const notifier = new ZaloBotNotifier(env);
+    // Gather full order data for notification
+    const notifyItems = await env.DB.prepare(
+      `SELECT oi.id, oi.product_name, oi.price, oi.quantity, oi.size_name, oi.note
+       FROM order_items oi WHERE oi.order_id = ?`
+    ).bind(order.id).all();
+    const itemIds = notifyItems.results.map(i => i.id);
+    let toppingsByItem = new Map();
+    if (itemIds.length > 0) {
+      const ph = itemIds.map(() => "?").join(",");
+      const tRes = await env.DB.prepare(
+        `SELECT oit.order_item_id, p.name, oit.price FROM order_item_toppings oit
+         JOIN products p ON p.id = oit.product_id WHERE oit.order_item_id IN (${ph})`
+      ).bind(...itemIds).all();
+      for (const t of tRes.results) {
+        if (!toppingsByItem.has(t.order_item_id)) toppingsByItem.set(t.order_item_id, []);
+        toppingsByItem.get(t.order_item_id).push({ name: t.name, price: t.price });
+      }
+    }
+    const notifyData = {
+      order_id: order.id,
+      display_code: order.display_code,
+      customer_name: order.customer_name,
+      customer_phone: body.customer_phone,
+      ship_address: body.ship_address,
+      latitude: body.latitude ?? null,
+      longitude: body.longitude ?? null,
+      items: notifyItems.results.map(it => ({
+        product_name: it.product_name,
+        price: it.price,
+        quantity: it.quantity,
+        size_name: it.size_name,
+        note: it.note,
+        toppings: toppingsByItem.get(it.id) || [],
+      })),
+      total_amount: finalTotal,
+      created_at: new Date().toISOString(),
+    };
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(notifier.notifyNewShipOrder(notifyData));
+    } else {
+      notifier.notifyNewShipOrder(notifyData).catch(() => {});
+    }
+  }
+
   return json({
     message: "Dat mon thanh cong",
     order_id: order.id,
@@ -2776,7 +3010,7 @@ var worker_default = {
     if (url.pathname === "/api/public/ship/orders" && request.method === "POST") {
       try {
         const body = await request.json();
-        return await handleCreateShipOrder(env, body);
+        return await handleCreateShipOrder(env, body, ctx);
       } catch (err) {
         return json({ error: String(err) }, 400);
       }
@@ -3016,6 +3250,16 @@ var worker_default = {
         return await handleAdminPutSettings(env, request);
       } catch (err) {
         return json({ error: String(err) }, 400);
+      }
+    }
+    if (url.pathname === "/api/admin/zalo-bot/test" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      const denied = requireRole(auth, ["admin"]);
+      if (denied) return denied;
+      try {
+        return await handleZaloBotTest(env);
+      } catch (err) {
+        return json({ error: String(err) }, 500);
       }
     }
     if (url.pathname === "/api/orders/history" && request.method === "GET") {

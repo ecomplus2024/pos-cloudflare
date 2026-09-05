@@ -1510,24 +1510,51 @@ function PosApp({ user, onLogout }) {
                           const statusColor = o.status === "completed" || o.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700";
                           const statusLabel = o.status === "completed" || o.status === "paid" ? "Hoàn tất" : "Chờ";
                           return (
-                            <div key={`ship-${o.id}`} className="bg-white p-3 rounded-lg border border-blue-200 flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs px-2 py-1 rounded-full font-medium bg-blue-100 text-blue-700">SHIP</span>
-                                <div>
-                                  <div className="font-semibold">{displayName}</div>
-                                  <div className="text-xs text-gray-500">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</div>
+                            <div key={`ship-${o.id}`} className="bg-white p-3 rounded-lg border border-blue-200 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs px-2 py-1 rounded-full font-medium bg-blue-100 text-blue-700">SHIP</span>
+                                  <span className="font-semibold text-sm">{displayName}</span>
+                                  <span className="text-xs text-gray-400">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-blue-600">{formatVND(o.total_amount ?? o.total)}</span>
+                                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-blue-600">{formatVND(o.total_amount ?? o.total)}</span>
-                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
-                                {o.status !== "completed" && (
+                              {/* Ship info */}
+                              <div className="text-xs text-gray-600 space-y-0.5 pl-1">
+                                {o.customer_phone && <div>📱 <a href={`tel:${o.customer_phone}`} className="text-blue-600 underline">{o.customer_phone}</a></div>}
+                                {o.ship_address && <div>📍 {o.ship_address}{o.latitude && o.longitude && <a href={`https://www.google.com/maps?q=${o.latitude},${o.longitude}`} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-600 underline">[Bản đồ]</a>}</div>}
+                                {o.ship_notes && <div>📝 <span className="italic">{o.ship_notes}</span></div>}
+                              </div>
+                              {/* Items */}
+                              {o.items && o.items.length > 0 && (
+                                <div className="border-t border-gray-100 pt-1.5 space-y-0.5">
+                                  {o.items.map((it, idx) => (
+                                    <div key={idx} className="flex items-baseline gap-2 text-xs">
+                                      <span className="text-gray-400 w-6 shrink-0">×{it.quantity}</span>
+                                      <span className="flex-1 text-gray-800">{it.name}{it.size_name && <span className="text-gray-400"> ({it.size_name})</span>}{it.toppings?.length > 0 && <span className="text-gray-400"> + {it.toppings.join(", ")}</span>}</span>
+                                      <span className="text-gray-600 tabular-nums">{(it.price * it.quantity).toLocaleString()}đ</span>
+                                    </div>
+                                  ))}
+                                  {o.items.some(it => it.note) && (
+                                    <div className="pt-1 space-y-0.5">
+                                      {o.items.filter(it => it.note).map((it, idx) => (
+                                        <div key={`note-${idx}`} className="text-xs text-orange-600 italic">💬 {it.name}: {it.note}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {o.status !== "completed" && (
+                                <div className="flex justify-end pt-1">
                                   <button onClick={() => setTakeawayPaymentModal({ orderId: o.id, paymentMethod: "cash" })}
                                     className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700">
                                     Hoàn tất
                                   </button>
-                                )}
-                              </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -4299,6 +4326,8 @@ const SHIP_CLIENT_KEY = "ship_client_id";
 const SHIP_NAME_KEY = "ship_customer_name";
 const SHIP_PHONE_KEY = "ship_customer_phone";
 const SHIP_ADDRESS_KEY = "ship_address";
+const SHIP_LAT_KEY = "ship_latitude";
+const SHIP_LNG_KEY = "ship_longitude";
 const SHIP_POLL_MS = 10000;
 
 function ShipMenuView() {
@@ -4323,6 +4352,7 @@ function ShipMenuView() {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [itemActionsLoading, setItemActionsLoading] = useState({});
+  const [lastOrderCode, setLastOrderCode] = useState("");
 
   // Ship enabled state
   const [shipEnabled, setShipEnabled] = useState(true);
@@ -4345,6 +4375,16 @@ function ShipMenuView() {
   });
   const [shipNotes, setShipNotes] = useState("");
 
+  // GPS location state
+  const [latitude, setLatitude] = useState(() => {
+    try { const v = localStorage.getItem(SHIP_LAT_KEY); return v ? parseFloat(v) : null; } catch { return null; }
+  });
+  const [longitude, setLongitude] = useState(() => {
+    try { const v = localStorage.getItem(SHIP_LNG_KEY); return v ? parseFloat(v) : null; } catch { return null; }
+  });
+  const [modalLocationLoading, setModalLocationLoading] = useState(false);
+  const [modalLocationError, setModalLocationError] = useState("");
+
   // Info modal state
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [nameInput, setNameInput] = useState("");
@@ -4366,15 +4406,7 @@ function ShipMenuView() {
     }
   }, [clientId]);
 
-  // Show info modal on first visit if missing required fields
-  useEffect(() => {
-    if (clientId && (!customerName || !customerPhone || !shipAddress)) {
-      setNameInput(customerName);
-      setPhoneInput(customerPhone);
-      setAddressInput(shipAddress);
-      setShowInfoModal(true);
-    }
-  }, [clientId]);
+  // Info modal now only opens when user clicks "Xác nhận đặt đơn" with incomplete info
 
   // Check ship_enabled
   useEffect(() => {
@@ -4510,6 +4542,11 @@ function ShipMenuView() {
     if (!name) { addToast("Vui lòng nhập họ tên"); return; }
     if (!phone || !/^[0-9]{10,11}$/.test(phone.replace(/\s/g, ""))) { addToast("Số điện thoại không hợp lệ (10-11 số)"); return; }
     if (!address) { addToast("Vui lòng nhập địa chỉ giao hàng"); return; }
+    if (!latitude || !longitude) {
+      addToast("Chưa lấy được định vị GPS. Vui lòng bật GPS và thử lại.");
+      getLocationForModal();
+      return;
+    }
     try {
       localStorage.setItem(SHIP_NAME_KEY, name);
       localStorage.setItem(SHIP_PHONE_KEY, phone);
@@ -4519,11 +4556,46 @@ function ShipMenuView() {
     setCustomerPhone(phone);
     setShipAddress(address);
     setShowInfoModal(false);
+    // Auto-submit order after closing modal
+    setTimeout(() => {
+      submitOrderInternal();
+    }, 150);
   };
 
+  // GPS location — auto-trigger when info modal opens
+  const getLocationForModal = () => {
+    if (!navigator.geolocation) { setModalLocationError("Trình duyệt không hỗ trợ định vị"); return; }
+    setModalLocationLoading(true); setModalLocationError("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        setLatitude(lat); setLongitude(lng); setModalLocationLoading(false);
+        setModalLocationError("Đã lấy tọa độ: " + lat.toFixed(6) + ", " + lng.toFixed(6));
+        try { localStorage.setItem(SHIP_LAT_KEY, lat.toString()); localStorage.setItem(SHIP_LNG_KEY, lng.toString()); } catch {}
+      },
+      () => { setModalLocationError("Không thể lấy vị trí. Vui lòng nhập địa chỉ."); setModalLocationLoading(false); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Submit order: validate info + GPS first, then submit
   const submitOrder = async () => {
     if (cart.length === 0) { addToast("Vui lòng chọn ít nhất 1 món"); return; }
-    if (!customerPhone || !shipAddress) { addToast("Vui lòng cập nhật thông tin giao hàng"); return; }
+    // Check if info is complete + GPS available
+    if (!customerName || !customerPhone || !shipAddress || !latitude || !longitude) {
+      setNameInput(customerName || "");
+      setPhoneInput(customerPhone || "");
+      setAddressInput(shipAddress || "");
+      setShowInfoModal(true);
+      // Auto-trigger GPS
+      setTimeout(() => getLocationForModal(), 100);
+      return;
+    }
+    await submitOrderInternal();
+  };
+
+  // Internal: actually submit order (assumes info + GPS already validated)
+  const submitOrderInternal = async () => {
     setIsOrdering(true);
     try {
       const res = await fetch("/api/public/ship/orders", {
@@ -4533,6 +4605,8 @@ function ShipMenuView() {
           customer_name: customerName,
           customer_phone: customerPhone,
           ship_address: shipAddress,
+          latitude: latitude,
+          longitude: longitude,
           ship_notes: shipNotes,
           items: cart.map((it) => ({
             product_id: it.product.id, quantity: it.quantity,
@@ -4547,16 +4621,25 @@ function ShipMenuView() {
         setIsOrdering(false);
         return;
       }
+      let resultData; try { resultData = await res.json(); } catch { resultData = {}; }
+      setLastOrderCode(resultData.display_code || "");
       setOrderSuccess(true);
       setIsOrdering(false);
-      setTimeout(() => {
-        setCart([]); setOrderSuccess(false);
-        setShowCartModal(false); setActiveView("myorder");
-      }, 2000);
+      // Don't auto-close — show 2 buttons for user to choose
     } catch (err) {
       setIsOrdering(false);
       addToast("Mạng không ổn định, vui lòng thử lại.");
     }
+  };
+
+  const handleViewMyOrder = () => {
+    setCart([]); setOrderSuccess(false);
+    setShowCartModal(false); setActiveView("myorder");
+  };
+
+  const handleAddMore = () => {
+    setCart([]); setOrderSuccess(false);
+    setShowCartModal(false); setActiveView("menu");
   };
 
   const isItemActionLoading = (itemId, action) => Boolean(itemActionsLoading[`${action}_${itemId}`]);
@@ -4634,8 +4717,8 @@ function ShipMenuView() {
           <div className="absolute inset-0 bg-orange-700/60"></div>
           <div className="relative bg-white w-full max-w-md rounded-lg border border-gray-200 overflow-hidden">
             <div className="p-5 border-b border-gray-100">
-              <h3 className="text-base font-semibold text-orange-800">Thông tin giao hàng</h3>
-              <p className="text-xs text-gray-500 mt-1">Vui lòng nhập đầy đủ để đặt món</p>
+              <h3 className="text-base font-semibold text-orange-800">Xác nhận thông tin giao hàng</h3>
+              <p className="text-xs text-gray-500 mt-1">Nhập đầy đủ thông tin và cho phép định vị để đặt món</p>
             </div>
             <div className="p-5 space-y-4">
               <div>
@@ -4655,10 +4738,32 @@ function ShipMenuView() {
                 <textarea placeholder="Số nhà, đường, phường, quận..." value={addressInput} rows={2}
                   onChange={(e) => setAddressInput(e.target.value)}
                   className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-md text-sm text-orange-800 placeholder-gray-400 focus:outline-none focus:border-orange-700 resize-none" />
+                <div className="mt-2 flex items-center gap-2">
+                  {modalLocationLoading ? (
+                    <span className="text-xs text-orange-600 font-medium animate-pulse">📡 Đang lấy định vị GPS...</span>
+                  ) : latitude && longitude ? (
+                    <span className="text-xs text-green-600 font-bold">✅ Đã lấy vị trí ({latitude.toFixed(4)}, {longitude.toFixed(4)})</span>
+                  ) : (
+                    <button onClick={getLocationForModal}
+                      className="text-xs text-orange-700 hover:text-orange-900 underline font-medium">
+                      📍 Bấm lại để lấy GPS
+                    </button>
+                  )}
+                </div>
+                {modalLocationError && !modalLocationLoading && !latitude && (
+                  <p className="mt-1 text-xs text-red-500 font-medium">⚠️ {modalLocationError}. Vui lòng bật GPS và thử lại.</p>
+                )}
+                {latitude && longitude && (
+                  <a href={`https://www.google.com/maps?q=${latitude},${longitude}`} target="_blank" rel="noopener noreferrer"
+                    className="block mt-1 text-xs text-blue-600 hover:text-blue-800 underline">
+                    🗺️ Xem trên Google Maps
+                  </a>
+                )}
               </div>
               <button onClick={handleInfoSubmit}
-                className="w-full py-2.5 bg-orange-700 text-white rounded-md font-medium text-sm hover:bg-gray-700 transition-colors">
-                Bắt đầu đặt món
+                disabled={modalLocationLoading || !latitude || !longitude}
+                className="w-full py-2.5 bg-orange-700 text-white rounded-md font-medium text-sm hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {modalLocationLoading ? "⏳ Đang lấy định vị..." : (!latitude || !longitude) ? "📍 Cần bật GPS để đặt món" : "✓ Xác nhận & Đặt món"}
               </button>
             </div>
           </div>
@@ -4829,13 +4934,19 @@ function ShipMenuView() {
                   {item.notes && <p className="mt-1.5 text-xs text-gray-600 italic">{item.notes}</p>}
                 </div>
               ))}
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-3 mt-3">
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-3 mt-3 space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">{myItems.length} món</span>
                   <span className="text-lg font-semibold text-orange-800 tabular-nums">
                     {myItems.reduce((total, item) => total + (item.price * item.quantity), 0).toLocaleString()}đ
                   </span>
                 </div>
+                {!isShipBlocked && (
+                  <button onClick={() => setActiveView("menu")}
+                    className="w-full py-2.5 bg-orange-700 text-white rounded-md font-medium text-sm hover:bg-gray-700 transition">
+                    🍽️ Gọi thêm món
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -4954,14 +5065,28 @@ function ShipMenuView() {
                 <span className="text-sm text-gray-600">{cart.length} món</span>
                 <span className="text-lg font-semibold text-orange-800 tabular-nums">{cartTotal.toLocaleString()}đ</span>
               </div>
-              <button onClick={submitOrder} disabled={isOrdering || orderSuccess || isShipBlocked}
-                className="w-full bg-orange-700 text-white py-2.5 rounded-md font-medium text-sm hover:bg-gray-700 disabled:opacity-50 flex items-center justify-center space-x-2">
-                {orderSuccess ? (
-                  <><Icon name="check" className="w-4 h-4" /><span>Đã gửi đơn!</span></>
-                ) : (
+              {orderSuccess ? (
+                <div className="space-y-2">
+                  <div className="text-center py-2">
+                    <span className="text-green-600 font-bold text-sm">✅ Đã gửi đơn {lastOrderCode && `#${lastOrderCode}`} thành công!</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleViewMyOrder}
+                      className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-md font-medium text-sm hover:bg-gray-200 transition">
+                      📋 Xem đơn
+                    </button>
+                    <button onClick={handleAddMore}
+                      className="flex-1 py-2.5 bg-orange-700 text-white rounded-md font-medium text-sm hover:bg-gray-700 transition">
+                      🍽️ Gọi thêm
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={submitOrder} disabled={isOrdering || isShipBlocked}
+                  className="w-full bg-orange-700 text-white py-2.5 rounded-md font-medium text-sm hover:bg-gray-700 disabled:opacity-50 flex items-center justify-center space-x-2">
                   <span>{isOrdering ? "Đang gửi..." : "Xác nhận đặt đơn"}</span>
-                )}
-              </button>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -5645,6 +5770,8 @@ function AdminPanel({ embedded = false, onExit }) {
   const [editingCategory, setEditingCategory] = useState(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryProductionUnit, setCategoryProductionUnit] = useState("kitchen");
+  const [categoryAllowAll, setCategoryAllowAll] = useState(true);
+  const [categoryToppingIds, setCategoryToppingIds] = useState([]);
   const [draggingCategoryId, setDraggingCategoryId] = useState(null);
 
   // ---- Staff modal state
@@ -5655,6 +5782,13 @@ function AdminPanel({ embedded = false, onExit }) {
   const [settings, setSettings] = useState({
     store_name: "", wifi_ssid: "", wifi_pass: "", facebook_url: "", featured_products: [],
   });
+  // ---- Zalo Bot settings state
+  const [zaloBot, setZaloBot] = useState({
+    enabled: false, bot_token: "", bot_token_masked: "", group_chat_id: "", api_base: "https://bot-api.zaloplatforms.com",
+  });
+  const [zaloBotDirty, setZaloBotDirty] = useState(false);
+  const [zaloTestResult, setZaloTestResult] = useState(null);
+  const [zaloTesting, setZaloTesting] = useState(false);
 
   useEffect(() => { fetchData(); }, [tab]);
 
@@ -5668,7 +5802,12 @@ function AdminPanel({ embedded = false, onExit }) {
         setProducts(pRes);
         setCategories(cRes);
       } else if (tab === "categories") {
-        setCategories(await apiAuth("/api/products/categories"));
+        const [cRes, pRes] = await Promise.all([
+          apiAuth("/api/products/categories"),
+          apiAuth("/api/products?available=all"),
+        ]);
+        setCategories(cRes);
+        setProducts(pRes);
       } else if (tab === "staff") {
         setUsers(await apiAuth("/api/admin/users"));
       } else if (tab === "tables") {
@@ -5677,14 +5816,26 @@ function AdminPanel({ embedded = false, onExit }) {
       } else if (tab === "orders") {
         setOrders(await apiAuth("/api/orders/history"));
       } else if (tab === "settings") {
-        const [sData, pData] = await Promise.all([
+        const [sData, pData, adminSettings] = await Promise.all([
           apiAuth("/api/settings"),
           apiAuth("/api/menu"),
+          apiAuth("/api/admin/settings"),
         ]);
         const next = sData || {};
         if (!next.featured_products) next.featured_products = [];
         setSettings(next);
         setProducts((pData.products || []).map((p) => ({ ...p, available: 1 })));
+        if (adminSettings?.zalo_bot) {
+          setZaloBot({
+            enabled: !!adminSettings.zalo_bot.enabled,
+            bot_token: "",
+            bot_token_masked: adminSettings.zalo_bot.bot_token_masked || "",
+            group_chat_id: adminSettings.zalo_bot.group_chat_id || "",
+            api_base: adminSettings.zalo_bot.api_base || "https://bot-api.zaloplatforms.com",
+          });
+        }
+        setZaloBotDirty(false);
+        setZaloTestResult(null);
       }
     } catch (err) {
       showToast("Lỗi tải dữ liệu: " + err.message);
@@ -5893,6 +6044,8 @@ function AdminPanel({ embedded = false, onExit }) {
     setEditingCategory(null);
     setCategoryName("");
     setCategoryProductionUnit("kitchen");
+    setCategoryAllowAll(true);
+    setCategoryToppingIds([]);
     setShowCategoryModal(true);
   };
 
@@ -5900,6 +6053,8 @@ function AdminPanel({ embedded = false, onExit }) {
     setEditingCategory(cat);
     setCategoryName(cat.name);
     setCategoryProductionUnit(cat.production_unit || "kitchen");
+    setCategoryAllowAll(cat.allow_all_toppings !== 0 && cat.allow_all_toppings !== false);
+    setCategoryToppingIds(cat.allowed_toppings || []);
     setShowCategoryModal(true);
   };
 
@@ -5917,7 +6072,12 @@ function AdminPanel({ embedded = false, onExit }) {
   const handleSaveCategory = async () => {
     if (!categoryName.trim()) return;
     try {
-      const payload = { name: categoryName.trim(), production_unit: categoryProductionUnit };
+      const payload = {
+        name: categoryName.trim(),
+        production_unit: categoryProductionUnit,
+        allow_all_toppings: categoryAllowAll ? 1 : 0,
+        topping_ids: categoryAllowAll ? [] : categoryToppingIds,
+      };
       if (editingCategory) {
         await apiAuth(`/api/admin/categories/${editingCategory.id}`, { method: "PUT", body: JSON.stringify(payload) });
       } else {
@@ -5958,9 +6118,43 @@ function AdminPanel({ embedded = false, onExit }) {
   const saveSettings = async (newSettings) => {
     setSettings(newSettings);
     try {
-      await apiAuth("/api/settings", { method: "POST", body: JSON.stringify(newSettings) });
+      // Loại bỏ zalo_bot khỏi payload — zalo_bot được quản lý riêng qua saveZaloBot
+      const { zalo_bot, ...safeSettings } = newSettings;
+      await apiAuth("/api/settings", { method: "POST", body: JSON.stringify(safeSettings) });
     } catch (err) {
       showToast("Lỗi lưu cấu hình");
+    }
+  };
+
+  const saveZaloBot = async () => {
+    try {
+      const payload = {
+        zalo_bot: {
+          enabled: zaloBot.enabled,
+          group_chat_id: zaloBot.group_chat_id,
+          api_base: zaloBot.api_base,
+        },
+      };
+      if (zaloBot.bot_token) payload.zalo_bot.bot_token = zaloBot.bot_token;
+      await apiAuth("/api/admin/settings", { method: "PUT", body: JSON.stringify(payload) });
+      setZaloBotDirty(false);
+      setZaloBot(prev => ({ ...prev, bot_token: "", bot_token_masked: prev.bot_token ? "..." + prev.bot_token.slice(-4) : prev.bot_token_masked }));
+      showToast("Đã lưu cấu hình Zalo Bot");
+    } catch (err) {
+      showToast("Lỗi lưu Zalo Bot: " + err.message);
+    }
+  };
+
+  const testZaloBot = async () => {
+    setZaloTesting(true);
+    setZaloTestResult(null);
+    try {
+      const res = await apiAuth("/api/admin/zalo-bot/test", { method: "POST" });
+      setZaloTestResult(res);
+    } catch (err) {
+      setZaloTestResult({ ok: false, message: err.message });
+    } finally {
+      setZaloTesting(false);
     }
   };
 
@@ -6374,6 +6568,87 @@ function AdminPanel({ embedded = false, onExit }) {
                 <p className="text-xs text-gray-400 font-bold">* Các món đã chọn sẽ hiển thị trên màn hình chào mừng sau khi khách quét mã QR.</p>
               </div>
             </div>
+
+            {/* Zalo Bot Notification */}
+            <div className="space-y-4">
+              <h3 className="text-xl font-black text-gray-800">🔔 Thông báo Zalo</h3>
+              <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                <p className="text-sm text-gray-500">Gửi thông báo đơn ship mới vào nhóm Zalo OA Bot.</p>
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-black text-gray-500 uppercase">Bật thông báo</label>
+                  <button
+                    type="button"
+                    onClick={() => { setZaloBot(prev => ({ ...prev, enabled: !prev.enabled })); setZaloBotDirty(true); }}
+                    className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors"
+                    style={{ backgroundColor: zaloBot.enabled ? '#22c55e' : '#d1d5db' }}
+                  >
+                    <span
+                      className="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform"
+                      style={{ transform: zaloBot.enabled ? 'translateX(22px)' : 'translateX(4px)' }}
+                    />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-500 uppercase">Bot Token</label>
+                    <input
+                      type="password"
+                      value={zaloBot.bot_token}
+                      onChange={(e) => { setZaloBot(prev => ({ ...prev, bot_token: e.target.value })); setZaloBotDirty(true); }}
+                      className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-gray-800"
+                      placeholder={zaloBot.bot_token_masked ? `Đã lưu (${zaloBot.bot_token_masked})` : "Nhập Bot Token..."}
+                    />
+                    {zaloBot.bot_token_masked && !zaloBot.bot_token && (
+                      <p className="text-xs text-green-600 font-bold">✓ Token đã lưu: {zaloBot.bot_token_masked}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-gray-500 uppercase">Group Chat ID</label>
+                    <input
+                      type="text"
+                      value={zaloBot.group_chat_id}
+                      onChange={(e) => { setZaloBot(prev => ({ ...prev, group_chat_id: e.target.value })); setZaloBotDirty(true); }}
+                      className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-gray-800"
+                      placeholder="Nhập Group Chat ID..."
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-500 uppercase">API Base URL</label>
+                  <input
+                    type="text"
+                    value={zaloBot.api_base}
+                    onChange={(e) => { setZaloBot(prev => ({ ...prev, api_base: e.target.value })); setZaloBotDirty(true); }}
+                    className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-primary-500 outline-none font-bold text-gray-800"
+                    placeholder="https://bot-api.zaloplatforms.com"
+                  />
+                </div>
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    onClick={saveZaloBot}
+                    disabled={!zaloBotDirty}
+                    className={`px-6 py-2.5 rounded-xl font-bold text-sm transition ${zaloBotDirty ? 'bg-primary-600 text-white hover:bg-primary-700 shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                  >
+                    💾 Lưu cấu hình Zalo
+                  </button>
+                  <button
+                    onClick={testZaloBot}
+                    disabled={zaloTesting}
+                    className="px-6 py-2.5 rounded-xl font-bold text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 transition disabled:opacity-50"
+                  >
+                    {zaloTesting ? "⏳ Đang gửi thử..." : "🧪 Gửi thử"}
+                  </button>
+                </div>
+                {zaloTestResult && (
+                  <div className={`p-3 rounded-xl text-sm font-bold ${zaloTestResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                    {zaloTestResult.ok ? '✅ ' : '❌ '}{zaloTestResult.message}
+                    {zaloTestResult.debug_message && (
+                      <pre className="mt-2 text-xs font-mono whitespace-pre-wrap text-gray-600 bg-white p-2 rounded-lg border">{zaloTestResult.debug_message}</pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -6622,6 +6897,41 @@ function AdminPanel({ embedded = false, onExit }) {
                     Bếp
                   </button>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-2">Topping cho danh mục</label>
+                <button
+                  type="button"
+                  onClick={() => setCategoryAllowAll(!categoryAllowAll)}
+                  className={`w-full py-3 rounded-2xl border-2 font-black text-xs uppercase tracking-widest transition-all text-left px-5 flex items-center justify-between ${categoryAllowAll ? "border-emerald-500 bg-emerald-50 text-emerald-600" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}`}
+                >
+                  <span>Cho phép tất cả topping</span>
+                  <span className={`w-10 h-6 rounded-full relative transition-colors ${categoryAllowAll ? "bg-emerald-500" : "bg-gray-300"}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${categoryAllowAll ? "left-[18px]" : "left-0.5"}`} />
+                  </span>
+                </button>
+                {!categoryAllowAll && (
+                  <div className="bg-gray-50 rounded-2xl p-3 max-h-48 overflow-y-auto space-y-1">
+                    {products.filter((p) => p.is_topping && p.available).length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-2">Chưa có topping nào</p>
+                    ) : (
+                      products.filter((p) => p.is_topping && p.available).map((t) => {
+                        const selected = categoryToppingIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setCategoryToppingIds((prev) => selected ? prev.filter((id) => id !== t.id) : [...prev, t.id])}
+                            className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${selected ? "bg-primary-100 text-primary-700 border border-primary-200" : "bg-white text-gray-600 border border-gray-100 hover:bg-gray-100"}`}
+                          >
+                            <span>{t.name} — {t.price?.toLocaleString()}đ</span>
+                            {selected && <Icon name="check" className="w-3.5 h-3.5" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-8 bg-gray-50 border-t flex space-x-4">
