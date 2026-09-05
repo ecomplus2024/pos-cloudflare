@@ -816,24 +816,22 @@ function PosApp({ user, onLogout }) {
         payment_method: paymentMethod,
         items: newItems,
       };
-      const data = await authFetch("/api/orders", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      // Track the active order id so subsequent edits/deletes target the right record
-      setCurrentOrderId(data.order_id);
-      // Snapshot current cart as baseline for next delta
+      // Optimistic: snapshot baseline + toast ngay, API chạy nền
       setInitialCart(JSON.parse(JSON.stringify(cart)));
-      
       setShowCheckout(false);
-      await refreshTables();
-      loadOrders();
-      showToast(data.reused ? "Đã thêm vào đơn hiện có" : "Đã gửi báo chế biến");
-    } catch (err) {
-      showToast("Lỗi: " + err.message);
-    } finally {
       setSubmitting(false);
-    }
+      showToast("Đã gửi báo chế biến");
+      try {
+        const data = await authFetch("/api/orders", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setCurrentOrderId(data.order_id);
+        refreshTables();
+        loadOrders();
+      } catch (err) {
+        showToast("Lỗi gửi bếp: " + err.message);
+      }
   };
 
   // Quick order (no table): "Mang về" / "Ship"
@@ -892,24 +890,25 @@ function PosApp({ user, onLogout }) {
   // "Thanh toán": auto-submit then pay table
   const handlePayment = async () => {
     if (!selectedTable) return;
-    // Chỉ thanh toán khi có món trong giỏ hoặc bàn đã có đơn (occupied)
     if (cart.length === 0 && selectedTable.status !== "occupied") return;
+    // Optimistic: đóng bàn ngay trên UI, gọi BE chạy nền
+    setShowCheckout(false);
+    clearCart();
+    setView("tables");
+    showToast("Đã thanh toán");
     // Auto-save latest cart before paying (delta-submit will no-op if nothing new)
     if (cart.length > 0) {
       await submitOrder();
     }
     try {
-      const data = await authFetch(`/api/tables/${selectedTable.id}/pay`, {
+      await authFetch(`/api/tables/${selectedTable.id}/pay`, {
         method: "POST",
         body: JSON.stringify({ payment_method: paymentMethod, table_position: selectedPosition }),
       });
-      await refreshTables();
-      setShowCheckout(false);
-      clearCart();
-      setView("tables");
-      showToast("Đã thanh toán");
+      refreshTables();
     } catch (err) {
-      showToast("Lỗi: " + err.message);
+      showToast("Lỗi thanh toán: " + err.message);
+      refreshTables();
     }
   };
 
