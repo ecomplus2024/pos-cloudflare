@@ -74,4 +74,8 @@
   @keyframes zoomIn95 { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   @keyframes slideInRight { from { transform: translateX(120%); } to { transform: translateX(0); } }
   .animate-slide-in-right { animation: slideInRight 0.3s ease-out; }
+
+  /* Ẩn scrollbar nhưng vẫn cuộn được (category chips, cart list...) */
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 }

@@ -13,3 +13,11 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local dev helpers & large binaries
+tailwindcss-v3.exe
+tailwindcss-v3
+.claude/
+replace_icons.py
+check_missing_css.py
+test_kitchen_flow.py
