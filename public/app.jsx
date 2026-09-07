@@ -757,9 +757,9 @@ function useSyncPolling() {
       if (tasks.length > 0) await Promise.all(tasks);
     };
 
-    // Immediate first poll, then every 3s (tránh race với D1 eventual consistency)
+    // Immediate first poll, then every 5s (tránh race với D1 eventual consistency)
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 5000);
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
@@ -3607,8 +3607,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
     pendingStatusRef.current.set(itemId, { status });
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 3000;
-    syncStaleUntilRef.current = Date.now() + 3000;
+    staleUntilRef.current = Date.now() + 5000;
+    syncStaleUntilRef.current = Date.now() + 5000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3643,8 +3643,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       pendingStatusRef.current.set(item.id, { qty: newQty });
     }
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 3000;
-    syncStaleUntilRef.current = Date.now() + 3000;
+    staleUntilRef.current = Date.now() + 5000;
+    syncStaleUntilRef.current = Date.now() + 5000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3680,8 +3680,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
     pendingStatusRef.current.set(item.id, { deleted: true });
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 3000;
-    syncStaleUntilRef.current = Date.now() + 3000;
+    staleUntilRef.current = Date.now() + 5000;
+    syncStaleUntilRef.current = Date.now() + 5000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
