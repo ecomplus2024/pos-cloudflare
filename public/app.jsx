@@ -3531,6 +3531,11 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
           items: order.items.map((it) => {
             const p = pending.get(it.id);
             if (!p) return it;
+            // Nếu server đã sync đúng → xóa pending
+            if (p.status && it.status === p.status) {
+              pending.delete(it.id);
+              return it;
+            }
             if (p.deleted) return null; // item đang bị hủy/xóa
             return { ...it, status: p.status ?? it.status, quantity: p.qty ?? it.quantity };
           }).filter(Boolean),
@@ -3605,10 +3610,11 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       });
     } catch (err) {
       console.error("Status update error:", err);
-    } finally {
+      // Rollback on error
       pendingStatusRef.current.delete(itemId);
-      setItemActionLoading((prev) => ({ ...prev, [key]: false }));
+      fetchOrders();
     }
+    setItemActionLoading((prev) => ({ ...prev, [key]: false }));
   };
 
   const reduceItemQuantity = async (item) => {
@@ -3644,10 +3650,11 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       }
     } catch (err) {
       console.error("Reduce error:", err);
-    } finally {
+      // Rollback on error
       pendingStatusRef.current.delete(item.id);
-      setItemActionLoading((prev) => ({ ...prev, [key]: false }));
+      fetchOrders();
     }
+    setItemActionLoading((prev) => ({ ...prev, [key]: false }));
   };
 
   const cancelItem = async (item) => {
@@ -3669,10 +3676,11 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, { method: "DELETE" });
     } catch (err) {
       console.error("Cancel error:", err);
-    } finally {
+      // Rollback on error
       pendingStatusRef.current.delete(item.id);
-      setItemActionLoading((prev) => ({ ...prev, [key]: false }));
+      fetchOrders();
     }
+    setItemActionLoading((prev) => ({ ...prev, [key]: false }));
   };
 
   // I5 fix: Persist dismissed cancellations with TTL via localStorage
