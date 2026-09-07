@@ -748,7 +748,7 @@ async function handleKitchenOrders(env, unit) {
     } else {
       displayName = "Mang v\u1EC1";
     }
-    const items = itemsResult.results.map((it) => ({
+    const items = orderItems.map((it) => ({
       id: it.id,
       product_id: it.product_id,
       product_name: it.product_name,
