@@ -3425,6 +3425,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   // Theo dõi optimistic status: itemId → {status, qty} — ngăn poll ghi đè
   const pendingStatusRef = useRef(new Map());
   const mutationCounter = useRef(0);
+  // Stale period: ngăn poll fetchOrders trong 3s sau mutation
+  const staleUntilRef = useRef(0);
 
   // Derived: merge context data with pending optimistic overrides (embedded mode)
   const orders = useMemo(() => {
@@ -3574,6 +3576,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   useEffect(() => {
     if (isEmbedded) return; // SyncProvider handles polling
     const poll = async () => {
+      // Skip nếu đang trong stale period (sau mutation)
+      if (Date.now() < staleUntilRef.current) return;
       try {
         const resp = await authFetch(`/api/changes?ctx=kitchen&unit=${unit}`);
         const changes = await resp.json();
@@ -3582,6 +3586,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       } catch {
         // /api/changes failed → always fetch full data as fallback
       }
+      // Skip nếu có pending items (đang chờ API)
+      if (pendingStatusRef.current.size > 0) return;
       fetchOrders();
     };
     poll();
@@ -3595,6 +3601,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
     pendingStatusRef.current.set(itemId, { status });
     mutationCounter.current++;
+    staleUntilRef.current = Date.now() + 3000; // 3s stale period
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3629,6 +3636,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       pendingStatusRef.current.set(item.id, { qty: newQty });
     }
     mutationCounter.current++;
+    staleUntilRef.current = Date.now() + 3000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3664,6 +3672,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
     pendingStatusRef.current.set(item.id, { deleted: true });
     mutationCounter.current++;
+    staleUntilRef.current = Date.now() + 3000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
