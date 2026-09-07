@@ -848,6 +848,7 @@ function PosApp({ user, onLogout }) {
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [selectedPosition, setSelectedPosition] = useState("A");
   const [showPositionPicker, setShowPositionPicker] = useState(false);
+  const [showTablePicker, setShowTablePicker] = useState(false); // popup chọn bàn từ ORDER NHANH
   // Table order history
   const [tableHistory, setTableHistory] = useState(null); // { tableId, tableName, orders }
   const [tableHistoryLoading, setTableHistoryLoading] = useState(false);
@@ -1530,7 +1531,17 @@ function PosApp({ user, onLogout }) {
               </div>
               {tableFilterTab === "tables" && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <button onClick={() => { setSelectedTable(null); setCart([]); setInitialCart([]); setCurrentOrderId(null); setView("menu"); }}
+                <button onClick={() => {
+                    if (cart.length > 0) {
+                      setShowTablePicker(true);
+                    } else {
+                      setSelectedTable(null);
+                      setCart([]);
+                      setInitialCart([]);
+                      setCurrentOrderId(null);
+                      setView("menu");
+                    }
+                  }}
                   className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-5 text-left hover:border-orange-500 transition relative">
                   <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-orange-500"></div>
                   <div className="font-black text-orange-600 text-base mb-3">ORDER NHANH</div>
@@ -1713,7 +1724,7 @@ function PosApp({ user, onLogout }) {
               <div className="mb-3">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div>
-                    <button onClick={() => { setSelectedTable(null); setView("tables"); setCart([]);  }}
+                    <button onClick={() => { setShowTablePicker(true); }}
                       className="text-sm text-gray-500 hover:text-gray-900 mb-1 flex items-center gap-1"><Icon name="arrow-left" className="w-4 h-4" /> Quay lại</button>
                     <h2 className="text-xl font-bold">{selectedTable ? `Bàn: ${selectedTable.name}` : "Order nhanh"}</h2>
                   </div>
@@ -1935,7 +1946,7 @@ function PosApp({ user, onLogout }) {
                     <button onClick={() => { openTakeawayModal("ship"); setShowMobileCart(false); }}
                       disabled={cart.length === 0 || submitting}
                       className="py-4 bg-blue-500 text-white rounded-xl font-bold text-xs uppercase active:scale-95 disabled:opacity-50">Ship</button>
-                    <button onClick={() => { setSelectedTable(null); setView("tables"); setShowMobileCart(false); }}
+                    <button onClick={() => { setShowTablePicker(true); setShowMobileCart(false); }}
                       className="py-4 bg-white border-2 border-gray-200 text-gray-800 rounded-xl font-bold text-xs uppercase active:scale-95">Chọn bàn</button>
                   </div>
                 )}
@@ -2097,7 +2108,7 @@ function PosApp({ user, onLogout }) {
                       className="py-4 bg-blue-500 text-white rounded-xl font-bold text-sm uppercase shadow-md shadow-blue-100 hover:bg-blue-600 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center">
                       <Icon name="truck" className="w-4 h-4" /> Ship
                     </button>
-                    <button onClick={() => { setSelectedTable(null); setView("tables"); }}
+                    <button onClick={() => setShowTablePicker(true)}
                       className="py-4 bg-white border-2 border-gray-200 text-gray-800 rounded-xl font-bold text-sm uppercase shadow-sm hover:bg-gray-100 transition-all active:scale-95">
                       Chọn bàn
                     </button>
@@ -2148,6 +2159,57 @@ function PosApp({ user, onLogout }) {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Table Picker modal - chọn bàn từ ORDER NHANH */}
+      {showTablePicker && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowTablePicker(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b bg-orange-50 flex justify-between items-center flex-shrink-0">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Chọn bàn</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Chạm vào bàn để gán vào đơn hàng</p>
+              </div>
+              <button onClick={() => setShowTablePicker(false)}
+                className="p-2 hover:bg-orange-100 rounded-full transition text-2xl text-gray-500">×</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-3">
+                {tables.map((t) => {
+                  const occupied = t.status === "occupied";
+                  return (
+                    <button key={t.id} onClick={() => {
+                      setShowTablePicker(false);
+                      setSelectedTable(t);
+                      setSelectedCategory(null);
+                      // Giữ nguyên giỏ hàng (ORDER NHANH flow)
+                      setEditingNotesIndex(null);
+                      setEditingPriceIndex(null);
+                      const positions = t.positions || [];
+                      const occupiedPositions = positions.filter((p) => p.status === "occupied");
+                      if (occupiedPositions.length > 1) {
+                        setShowPositionPicker(true);
+                        return;
+                      }
+                      if (occupiedPositions.length === 1) {
+                        openPosition(occupiedPositions[0].position, t);
+                        return;
+                      }
+                      setSelectedPosition("A");
+                      setView("menu");
+                    }}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all ${occupied
+                        ? "border-red-200 bg-red-50 hover:border-red-400"
+                        : "border-gray-100 bg-white hover:border-primary-400 hover:shadow-lg"}`}>
+                      <div className={`font-black text-base ${occupied ? "text-red-600" : "text-gray-800"}`}>{t.name}</div>
+                      <div className="text-xs mt-1 font-medium">{occupied ? "Có khách" : "Trống"}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
