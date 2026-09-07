@@ -644,6 +644,9 @@ async function fetchKitchenOrdersData(unit) {
 // ============ Global Sync: Context + Polling Hook + Provider ============
 const SyncContext = createContext(null);
 
+// Shared stale ref: KitchenView mutations set this, SyncProvider polls check it
+const syncStaleUntilRef = { current: 0 };
+
 function useSyncPolling() {
   const [tables, setTables] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -671,6 +674,9 @@ function useSyncPolling() {
     let cancelled = false;
 
     const poll = async () => {
+      // Skip nếu đang trong stale period (KitchenView mutations)
+      if (Date.now() < syncStaleUntilRef.current) return;
+
       // 1. Parallel change-key checks
       const [tablesChange, kitchenChange, counterChange] = await Promise.all([
         authFetch("/api/changes?ctx=tables").catch(() => null),
@@ -751,9 +757,9 @@ function useSyncPolling() {
       if (tasks.length > 0) await Promise.all(tasks);
     };
 
-    // Immediate first poll, then every 1s
+    // Immediate first poll, then every 3s (tránh race với D1 eventual consistency)
     poll();
-    const interval = setInterval(poll, 1000);
+    const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
@@ -3601,7 +3607,8 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
     pendingStatusRef.current.set(itemId, { status });
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 3000; // 3s stale period
+    staleUntilRef.current = Date.now() + 3000;
+    syncStaleUntilRef.current = Date.now() + 3000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3637,6 +3644,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     }
     mutationCounter.current++;
     staleUntilRef.current = Date.now() + 3000;
+    syncStaleUntilRef.current = Date.now() + 3000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3673,6 +3681,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     pendingStatusRef.current.set(item.id, { deleted: true });
     mutationCounter.current++;
     staleUntilRef.current = Date.now() + 3000;
+    syncStaleUntilRef.current = Date.now() + 3000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
