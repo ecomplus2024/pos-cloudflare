@@ -322,17 +322,93 @@ async function handleGetOrders(env) {
   ).all();
   return json({ orders: orders.results });
 }
+// ============ In-memory menu cache (per isolate) ============
+// Dùng khi tạo đơn: tránh đọc products/sizes/categories/category_toppings mỗi lần báo chế biến.
+// - TTL ngắn (15s): menu đổi trên DB sẽ tự cập nhật tối đa sau 15s trên mọi isolate
+// - invalidateMenuCaches(): xóa ngay lập tức khi admin sửa menu (cùng isolate)
+let menuDataCache = null; // { productsById, sizesById, toppingsById, allowAllByCategory, allowedToppingsByCategory, expiresAt }
+const MENU_CACHE_TTL_MS = 15000;
+
+async function getMenuData(env) {
+  if (menuDataCache && Date.now() < menuDataCache.expiresAt) return menuDataCache;
+  const [productsRes, sizesRes, catsRes, catToppingsRes] = await env.DB.batch([
+    env.DB.prepare(`SELECT id, price, name, available, category_id, is_topping FROM products`),
+    env.DB.prepare(`SELECT id, name, price, product_id FROM product_sizes`),
+    env.DB.prepare(`SELECT id, allow_all_toppings FROM categories`),
+    env.DB.prepare(`SELECT category_id, product_id FROM category_toppings`),
+  ]);
+  const productsById = new Map();
+  const toppingsById = new Map();
+  for (const p of productsRes.results || []) {
+    productsById.set(p.id, p);
+    if (p.is_topping === 1 && p.available === 1) {
+      toppingsById.set(p.id, { price: p.price, is_topping: p.is_topping, available: p.available });
+    }
+  }
+  const sizesById = new Map();
+  for (const s of sizesRes.results || []) {
+    sizesById.set(s.id, { name: s.name, price: s.price, product_id: s.product_id });
+  }
+  const allowAllByCategory = new Map();
+  for (const c of catsRes.results || []) {
+    allowAllByCategory.set(c.id, c.allow_all_toppings);
+  }
+  const allowedToppingsByCategory = new Map();
+  for (const r of catToppingsRes.results || []) {
+    if (!allowedToppingsByCategory.has(r.category_id)) allowedToppingsByCategory.set(r.category_id, new Set());
+    allowedToppingsByCategory.get(r.category_id).add(r.product_id);
+  }
+  menuDataCache = {
+    productsById, sizesById, toppingsById, allowAllByCategory, allowedToppingsByCategory,
+    expiresAt: Date.now() + MENU_CACHE_TTL_MS,
+  };
+  return menuDataCache;
+}
+
 async function handleCreateOrder(env, body) {
   if (!body.items || body.items.length === 0) return json({ error: "Cart r\u1ED7ng" }, 400);
   const tablePosition = (body.table_position || "A").toUpperCase();
   let orderId = null;
   let reused = false;
+  const isTakeawayOrShip = !body.table_id && body.order_type && (body.order_type === "takeaway" || body.order_type === "ship");
+
+  // T\u1ED1i \u01B0u: gom c\u00E1c query \u0111\u1ECDc (existing order, display code count, products, categories,
+  // category_toppings, sizes, toppings) ch\u1EA1y song song thay v\u00EC tu\u1EA7n t\u1EF1
+  // Tối ưu: menu data (products/sizes/categories/category_toppings) lấy từ cache in-memory
+  // TTL 15s + invalidate khi admin sửa menu → không cần đọc lại mỗi lần báo chế biến
+  const todayStart = (new Date()).toISOString().slice(0, 10);
+
+  const prep = [];
+  const prepKeys = [];
   if (body.table_id) {
-    const existing = await env.DB.prepare(
+    prepKeys.push("existing");
+    prep.push(env.DB.prepare(
       `SELECT id FROM orders
        WHERE table_id = ? AND status = 'pending' AND (table_position = ? OR table_position IS NULL)
        ORDER BY created_at DESC LIMIT 1`
-    ).bind(body.table_id, tablePosition).first();
+    ).bind(body.table_id, tablePosition));
+  }
+  if (isTakeawayOrShip) {
+    prepKeys.push("codeCount");
+    prep.push(env.DB.prepare(
+      `SELECT COUNT(*) AS cnt FROM orders
+       WHERE table_id IS NULL AND order_type = ? AND created_at >= ?`
+    ).bind(body.order_type, todayStart));
+  }
+  const [menuData, prepResults] = await Promise.all([
+    getMenuData(env),
+    prep.length > 0 ? env.DB.batch(prep) : Promise.resolve([]),
+  ]);
+  const prepByKey = {};
+  prepKeys.forEach((k, i) => { prepByKey[k] = prepResults[i]; });
+  const productsById = menuData.productsById;
+  const sizesById = menuData.sizesById;
+  const toppingsById = menuData.toppingsById;
+  const allowAllByCategory = menuData.allowAllByCategory;
+  const allowedToppingsByCategory = menuData.allowedToppingsByCategory;
+
+  if (body.table_id) {
+    const existing = prepByKey.existing?.results?.[0];
     if (existing) {
       orderId = existing.id;
       reused = true;
@@ -341,12 +417,8 @@ async function handleCreateOrder(env, body) {
   }
   if (orderId === null) {
     let displayCode = null;
-    if (!body.table_id && body.order_type && (body.order_type === "takeaway" || body.order_type === "ship")) {
-      const todayStart = (new Date()).toISOString().slice(0, 10);
-      const countRow = await env.DB.prepare(
-        `SELECT COUNT(*) AS cnt FROM orders
-         WHERE table_id IS NULL AND order_type = ? AND created_at >= ?`
-      ).bind(body.order_type, todayStart).first();
+    if (isTakeawayOrShip) {
+      const countRow = prepByKey.codeCount?.results?.[0];
       const prefix = body.order_type === "takeaway" ? "mv" : "ship";
       displayCode = `${prefix}${(countRow?.cnt ?? 0) + 1}`;
     }
@@ -367,62 +439,12 @@ async function handleCreateOrder(env, body) {
     if (!orderResult) return json({ error: "Kh\xF4ng t\u1EA1o \u0111\u01B0\u1EE3c \u0111\u01A1n" }, 500);
     orderId = orderResult.id;
   }
-  const productIds = [...new Set(body.items.map((it) => it.product_id))];
-  let productsById = new Map();
-  if (productIds.length > 0) {
-    const ph = productIds.map(() => "?").join(",");
-    const prodResult = await env.DB.prepare(
-      `SELECT id, price, name, available, category_id FROM products WHERE id IN (${ph})`
-    ).bind(...productIds).all();
-    for (const p of prodResult.results) {
-      productsById.set(p.id, p);
-    }
-  }
-  const catIds = [...new Set([...productsById.values()].map((p) => p.category_id))];
-  let allowAllByCategory = new Map();
-  let allowedToppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const ph = catIds.map(() => "?").join(",");
-    const catResult = await env.DB.prepare(
-      `SELECT id, allow_all_toppings FROM categories WHERE id IN (${ph})`
-    ).bind(...catIds).all();
-    for (const c of catResult.results) {
-      allowAllByCategory.set(c.id, c.allow_all_toppings);
-    }
-    const ctResult = await env.DB.prepare(
-      `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${ph})`
-    ).bind(...catIds).all();
-    for (const r of ctResult.results) {
-      if (!allowedToppingsByCategory.has(r.category_id)) allowedToppingsByCategory.set(r.category_id, new Set());
-      allowedToppingsByCategory.get(r.category_id).add(r.product_id);
-    }
-  }
-  const sizeIds = [...new Set(body.items.filter((it) => it.size_id).map((it) => it.size_id))];
-  let sizesById = new Map();
-  if (sizeIds.length > 0) {
-    const ph = sizeIds.map(() => "?").join(",");
-    const sizeResult = await env.DB.prepare(
-      `SELECT id, name, price, product_id FROM product_sizes WHERE id IN (${ph})`
-    ).bind(...sizeIds).all();
-    for (const s of sizeResult.results) {
-      sizesById.set(s.id, { name: s.name, price: s.price, product_id: s.product_id });
-    }
-  }
-  const allToppingIds = [...new Set(body.items.flatMap((it) => (it.toppings ?? []).map((t) => typeof t === "number" ? t : t.id)))];
-  let toppingsById = new Map();
-  if (allToppingIds.length > 0) {
-    const ph = allToppingIds.map(() => "?").join(",");
-    const tpResult = await env.DB.prepare(
-      `SELECT id, price, is_topping, available FROM products WHERE id IN (${ph}) AND is_topping = 1 AND available = 1`
-    ).bind(...allToppingIds).all();
-    for (const t of tpResult.results) {
-      toppingsById.set(t.id, { price: t.price, is_topping: t.is_topping, available: t.available });
-    }
-  }
   const skippedItems = [];
   const invalidToppings = [];
   let insertedCount = 0;
   const insertedItems = [];
+  // Tối ưu: gom toàn bộ INSERT item vào 1 D1 batch (thay vì N round-trip tuần tự)
+  const validItems = [];
   for (let idx = 0; idx < body.items.length; idx++) {
     const it = body.items[idx];
     const product = productsById.get(it.product_id);
@@ -443,47 +465,96 @@ async function handleCreateOrder(env, body) {
         sizeName = size.name;
       }
     }
-    const qty = it.quantity ?? 1;
-    const notes = it.note ?? "";
-    const inserted = await env.DB.prepare(
+    validItems.push({ idx, it, product, itemPrice, sizeName });
+  }
+  // Batch 1: INSERT tất cả items (RETURNING id)
+  const itemStmts = validItems.map((v) =>
+    env.DB.prepare(
       `INSERT INTO order_items (order_id, product_id, product_name, price, quantity, status, size_name, note)
        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?) RETURNING id`
-    ).bind(orderId, product.id, product.name, itemPrice, qty, sizeName, notes || null).first();
-    if (!inserted) continue;
+    ).bind(orderId, v.product.id, v.product.name, v.itemPrice, v.it.quantity ?? 1, v.sizeName, (v.it.note ?? "") || null)
+  );
+  const itemResults = itemStmts.length > 0 ? await env.DB.batch(itemStmts) : [];
+  // Batch 2: INSERT tất cả toppings
+  const toppingStmts = [];
+  const toppingFallbacks = []; // { stmtIdx: index trong toppingStmts, tid, ... } — fallback nếu thiếu cột quantity
+  validItems.forEach((v, vi) => {
+    const insertRes = itemResults[vi];
+    const newItemId = insertRes?.results?.[0]?.id;
+    if (!newItemId) return;
     insertedCount++;
-    insertedItems.push({ cart_index: idx, order_item_id: inserted.id });
-    const toppingEntries = it.toppings ?? [];
-    const allowAll = allowAllByCategory.get(product.category_id) ?? 0;
-    const allowedSet = allowedToppingsByCategory.get(product.category_id);
+    insertedItems.push({ cart_index: v.idx, order_item_id: newItemId });
+    const toppingEntries = v.it.toppings ?? [];
+    const allowAll = allowAllByCategory.get(v.product.category_id) ?? 0;
+    const allowedSet = allowedToppingsByCategory.get(v.product.category_id);
     for (const tEntry of toppingEntries) {
       const tid = typeof tEntry === "number" ? tEntry : tEntry.id;
       const tqty = typeof tEntry === "number" ? 1 : tEntry.quantity || 1;
       const tp = toppingsById.get(tid);
       if (!tp) {
-        invalidToppings.push({ product_id: product.id, topping_id: tid, reason: "invalid_or_unavailable" });
+        invalidToppings.push({ product_id: v.product.id, topping_id: tid, reason: "invalid_or_unavailable" });
         continue;
       }
       if (!allowAll && allowedSet && !allowedSet.has(tid)) {
-        invalidToppings.push({ product_id: product.id, topping_id: tid, reason: "not_allowed_for_category" });
+        invalidToppings.push({ product_id: v.product.id, topping_id: tid, reason: "not_allowed_for_category" });
         continue;
       }
+      toppingFallbacks.push({ stmtIdx: toppingStmts.length, itemId: newItemId, tid, price: tp.price });
+      toppingStmts.push(
+        env.DB.prepare(
+          `INSERT INTO order_item_toppings (order_item_id, product_id, price, quantity) VALUES (?, ?, ?, ?)`
+        ).bind(newItemId, tid, tp.price, tqty)
+      );
+    }
+  });
+  // Tối ưu: gom topping inserts + recalc total + update table vào 1 batch (1 RTT)
+  const finalBatch = [];
+  if (toppingStmts.length > 0) {
+    finalBatch.push(...toppingStmts);
+  }
+  finalBatch.push(env.DB.prepare(
+    `UPDATE orders SET total = (
+      SELECT COALESCE(SUM(oi.price * oi.quantity), 0) +
+             COALESCE((SELECT SUM(oit.price * COALESCE(oit.quantity, 1) * oi.quantity)
+                       FROM order_item_toppings oit
+                       JOIN order_items oi ON oi.id = oit.order_item_id
+                       WHERE oi.order_id = ?), 0)
+      FROM order_items oi WHERE oi.order_id = ?
+    ) WHERE id = ? RETURNING total`
+  ).bind(orderId, orderId, orderId));
+  if (body.table_id) {
+    finalBatch.push(env.DB.prepare(
+      `UPDATE tables SET status = 'occupied', current_order_id = ? WHERE id = ?`
+    ).bind(orderId, body.table_id));
+  }
+  let toppingBatchFailed = false;
+  let finalTotal = null;
+  const recalcIdx = toppingStmts.length; // vị trí statement recalc trong finalBatch
+  try {
+    const batchResults = await env.DB.batch(finalBatch);
+    finalTotal = batchResults?.[recalcIdx]?.results?.[0]?.total ?? null;
+  } catch (e) {
+    // Nếu batch lỗi (vd schema cũ thiếu cột quantity trong topping insert) → fallback tuần tự
+    toppingBatchFailed = true;
+  }
+  if (toppingBatchFailed) {
+    // Fallback: topping không quantity + recalc + table
+    for (const fb of toppingFallbacks) {
       try {
         await env.DB.prepare(
-          `INSERT INTO order_item_toppings (order_item_id, product_id, price, quantity) VALUES (?, ?, ?, ?)`
-        ).bind(inserted.id, tid, tp.price, tqty).run();
-      } catch {
-        await env.DB.prepare(
           `INSERT INTO order_item_toppings (order_item_id, product_id, price) VALUES (?, ?, ?)`
-        ).bind(inserted.id, tid, tp.price).run();
-      }
+        ).bind(fb.itemId, fb.tid, fb.price).run();
+      } catch {}
+    }
+    await recalcOrderTotal(env, orderId);
+    if (body.table_id) {
+      await env.DB.prepare(
+        `UPDATE tables SET status = 'occupied', current_order_id = ? WHERE id = ?`
+      ).bind(orderId, body.table_id).run();
     }
   }
-  await recalcOrderTotal(env, orderId);
-  const finalTotal = (await env.DB.prepare("SELECT total FROM orders WHERE id = ?").bind(orderId).first())?.total ?? 0;
-  if (body.table_id) {
-    await env.DB.prepare(
-      `UPDATE tables SET status = 'occupied', current_order_id = ? WHERE id = ?`
-    ).bind(orderId, body.table_id).run();
+  if (finalTotal === null) {
+    finalTotal = (await env.DB.prepare("SELECT total FROM orders WHERE id = ?").bind(orderId).first())?.total ?? 0;
   }
   return json({
     success: true,
@@ -626,31 +697,43 @@ async function handleKitchenOrders(env, unit) {
        AND (p.production_unit = ? OR (oi.product_id IS NULL AND ? = 'kitchen'))
      ORDER BY o.created_at ASC`
   ).bind(unit, unit).all();
-  const results = [];
-  for (const order of ordersResult.results) {
-    const itemsResult = await env.DB.prepare(
-      `SELECT oi.id, oi.product_id, oi.product_name, oi.quantity, oi.note, oi.status, oi.size_name,
+  const orderList = ordersResult.results || [];
+  if (orderList.length === 0) return json([]);
+
+  // Tối ưu N+1: fetch tất cả items + toppings của các order trong 2 query song song
+  const orderIds = orderList.map((o) => o.id);
+  const orderPh = orderIds.map(() => "?").join(",");
+  const [allItemsResult, allToppingsResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.quantity, oi.note, oi.status, oi.size_name,
               oi.reported_at, p.production_unit
        FROM order_items oi
        LEFT JOIN products p ON p.id = oi.product_id
-       WHERE oi.order_id = ? AND oi.status != 'completed'
+       WHERE oi.order_id IN (${orderPh}) AND oi.status != 'completed'
          AND (p.production_unit = ? OR (oi.product_id IS NULL AND ? = 'kitchen'))`
-    ).bind(order.id, unit, unit).all();
-    if (itemsResult.results.length === 0) continue;
-    const itemIds = itemsResult.results.map((it) => it.id);
-    let toppingsByItem = new Map();
-    if (itemIds.length > 0) {
-      const ph = itemIds.map(() => "?").join(",");
-      const tResult = await env.DB.prepare(
-        `SELECT oit.order_item_id, p.name FROM order_item_toppings oit
-         JOIN products p ON p.id = oit.product_id
-         WHERE oit.order_item_id IN (${ph})`
-      ).bind(...itemIds).all();
-      for (const t of tResult.results) {
-        if (!toppingsByItem.has(t.order_item_id)) toppingsByItem.set(t.order_item_id, []);
-        toppingsByItem.get(t.order_item_id).push(t.name);
-      }
-    }
+    ).bind(...orderIds, unit, unit).all(),
+    env.DB.prepare(
+      `SELECT oit.order_item_id, p.name FROM order_item_toppings oit
+       JOIN products p ON p.id = oit.product_id
+       JOIN order_items oi ON oi.id = oit.order_item_id
+       WHERE oi.order_id IN (${orderPh})`
+    ).bind(...orderIds).all(),
+  ]);
+  const itemsByOrder = new Map();
+  for (const it of allItemsResult.results || []) {
+    if (!itemsByOrder.has(it.order_id)) itemsByOrder.set(it.order_id, []);
+    itemsByOrder.get(it.order_id).push(it);
+  }
+  const toppingsByItem = new Map();
+  for (const t of allToppingsResult.results || []) {
+    if (!toppingsByItem.has(t.order_item_id)) toppingsByItem.set(t.order_item_id, []);
+    toppingsByItem.get(t.order_item_id).push(t.name);
+  }
+
+  const results = [];
+  for (const order of orderList) {
+    const orderItems = itemsByOrder.get(order.id) || [];
+    if (orderItems.length === 0) continue;
     let displayName;
     if (order.table_name) {
       displayName = order.table_name;
@@ -898,19 +981,17 @@ async function handleCreatePublicOrder(env, body) {
     isNewOrder = true;
   }
   const mergeDuplicates = !!body.retry_after_failure && !isNewOrder;
+  // Menu data từ cache in-memory (15s TTL) — tránh query product/size/topping cho từng món
+  const menuData = await getMenuData(env);
   let computedTotal = 0;
   for (const it of body.items) {
-    const product = await env.DB.prepare(
-      `SELECT id, price, name, available FROM products WHERE id = ?`
-    ).bind(it.product_id).first();
+    const product = menuData.productsById.get(it.product_id);
     if (!product || !product.available) continue;
     let itemPrice = product.price;
     let sizeName = null;
     if (it.size_id) {
-      const size = await env.DB.prepare(
-        `SELECT name, price FROM product_sizes WHERE id = ? AND product_id = ?`
-      ).bind(it.size_id, product.id).first();
-      if (size) {
+      const size = menuData.sizesById.get(it.size_id);
+      if (size && size.product_id === product.id) {
         itemPrice = size.price;
         sizeName = size.name;
       }
@@ -924,6 +1005,7 @@ async function handleCreatePublicOrder(env, body) {
         `SELECT id, price, size_name, note FROM order_items
          WHERE order_id = ? AND product_id = ? AND status = 'pending'`
       ).bind(orderId, product.id).all();
+      let merged = false;
       for (const ex of existingItems.results) {
         if ((ex.size_name ?? null) !== sizeName) continue;
         if ((ex.note ?? "") !== notes) continue;
@@ -934,12 +1016,16 @@ async function handleCreatePublicOrder(env, body) {
         const newIds = [...toppingIds].sort((a, b) => a - b);
         if (JSON.stringify(exIds) !== JSON.stringify(newIds)) continue;
         await env.DB.prepare(`UPDATE order_items SET quantity = quantity + ? WHERE id = ?`).bind(qty, ex.id).run();
-        const toppingSum2 = await sumToppingPrices(env, toppingIds);
+        let toppingSum2 = 0;
+        for (const tid of toppingIds) {
+          const tp2 = menuData.toppingsById.get(tid);
+          if (tp2) toppingSum2 += tp2.price;
+        }
         computedTotal += (itemPrice + toppingSum2) * qty;
-        product.id = -1;
+        merged = true;
         break;
       }
-      if (product.id === -1) continue;
+      if (merged) continue;
     }
     const inserted = await env.DB.prepare(
       `INSERT INTO order_items (order_id, product_id, product_name, price, quantity, status, size_name, note)
@@ -950,9 +1036,7 @@ async function handleCreatePublicOrder(env, body) {
     for (const tEntry of toppingEntries) {
       const tid = typeof tEntry === "number" ? tEntry : tEntry.id;
       const tqty = typeof tEntry === "number" ? 1 : tEntry.quantity || 1;
-      const tp = await env.DB.prepare(
-        `SELECT price FROM products WHERE id = ? AND is_topping = 1 AND available = 1`
-      ).bind(tid).first();
+      const tp = menuData.toppingsById.get(tid);
       if (tp) {
         try {
           await env.DB.prepare(
@@ -983,15 +1067,6 @@ async function handleCreatePublicOrder(env, body) {
     customer_session_id: sessionId,
     added_items_count: body.items.length
   }, 201);
-}
-async function sumToppingPrices(env, toppingIds) {
-  if (toppingIds.length === 0) return 0;
-  const placeholders = toppingIds.map(() => "?").join(",");
-  const r = await env.DB.prepare(
-    `SELECT COALESCE(SUM(price), 0) AS total FROM products
-     WHERE id IN (${placeholders}) AND is_topping = 1 AND available = 1`
-  ).bind(...toppingIds).first();
-  return r?.total ?? 0;
 }
 async function recalcOrderTotal(env, orderId) {
   await env.DB.prepare(
@@ -1427,50 +1502,13 @@ async function handleCreateTakeawayOrder(env, body) {
     await env.DB.prepare(`UPDATE orders SET customer_name = ? WHERE id = ?`).bind(body.customer_name, order.id).run();
     order.customer_name = body.customer_name;
   }
-  const productIds = [...new Set(body.items.map((it) => it.product_id))];
-  let productsById = new Map();
-  if (productIds.length > 0) {
-    const ph = productIds.map(() => "?").join(",");
-    const prodResult = await env.DB.prepare(
-      `SELECT id, price, name, available, category_id FROM products WHERE id IN (${ph})`
-    ).bind(...productIds).all();
-    for (const p of prodResult.results) productsById.set(p.id, p);
-  }
-  const sizeIds = [...new Set(body.items.filter((it) => it.size_id).map((it) => it.size_id))];
-  let sizesById = new Map();
-  if (sizeIds.length > 0) {
-    const ph = sizeIds.map(() => "?").join(",");
-    const sizeResult = await env.DB.prepare(
-      `SELECT id, name, price, product_id FROM product_sizes WHERE id IN (${ph})`
-    ).bind(...sizeIds).all();
-    for (const s of sizeResult.results) sizesById.set(s.id, { name: s.name, price: s.price, product_id: s.product_id });
-  }
-  const allToppingIds = [...new Set(body.items.flatMap((it) => (it.toppings ?? []).map((t) => typeof t === "number" ? t : t.id)))];
-  let toppingsById = new Map();
-  if (allToppingIds.length > 0) {
-    const ph = allToppingIds.map(() => "?").join(",");
-    const tpResult = await env.DB.prepare(
-      `SELECT id, price, is_topping, available FROM products WHERE id IN (${ph}) AND is_topping = 1 AND available = 1`
-    ).bind(...allToppingIds).all();
-    for (const t of tpResult.results) toppingsById.set(t.id, { price: t.price, is_topping: t.is_topping, available: t.available });
-  }
-  const catIds = [...new Set([...productsById.values()].map((p) => p.category_id))];
-  let allowAllByCategory = new Map();
-  let allowedToppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const ph = catIds.map(() => "?").join(",");
-    const catResult = await env.DB.prepare(
-      `SELECT id, allow_all_toppings FROM categories WHERE id IN (${ph})`
-    ).bind(...catIds).all();
-    for (const c of catResult.results) allowAllByCategory.set(c.id, c.allow_all_toppings);
-    const ctResult = await env.DB.prepare(
-      `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${ph})`
-    ).bind(...catIds).all();
-    for (const r of ctResult.results) {
-      if (!allowedToppingsByCategory.has(r.category_id)) allowedToppingsByCategory.set(r.category_id, new Set());
-      allowedToppingsByCategory.get(r.category_id).add(r.product_id);
-    }
-  }
+  // Menu data từ cache in-memory (15s TTL) — không cần query riêng mỗi lần
+  const menuData = await getMenuData(env);
+  const productsById = menuData.productsById;
+  const sizesById = menuData.sizesById;
+  const toppingsById = menuData.toppingsById;
+  const allowAllByCategory = menuData.allowAllByCategory;
+  const allowedToppingsByCategory = menuData.allowedToppingsByCategory;
   for (const it of body.items) {
     const product = productsById.get(it.product_id);
     if (!product || !product.available) continue;
@@ -1748,50 +1786,13 @@ async function handleCreateShipOrder(env, body, ctx) {
     ).run();
     if (body.customer_name) order.customer_name = body.customer_name;
   }
-  const productIds = [...new Set(body.items.map((it) => it.product_id))];
-  let productsById = new Map();
-  if (productIds.length > 0) {
-    const ph = productIds.map(() => "?").join(",");
-    const prodResult = await env.DB.prepare(
-      `SELECT id, price, name, available, category_id FROM products WHERE id IN (${ph})`
-    ).bind(...productIds).all();
-    for (const p of prodResult.results) productsById.set(p.id, p);
-  }
-  const sizeIds = [...new Set(body.items.filter((it) => it.size_id).map((it) => it.size_id))];
-  let sizesById = new Map();
-  if (sizeIds.length > 0) {
-    const ph = sizeIds.map(() => "?").join(",");
-    const sizeResult = await env.DB.prepare(
-      `SELECT id, name, price, product_id FROM product_sizes WHERE id IN (${ph})`
-    ).bind(...sizeIds).all();
-    for (const s of sizeResult.results) sizesById.set(s.id, { name: s.name, price: s.price, product_id: s.product_id });
-  }
-  const allToppingIds = [...new Set(body.items.flatMap((it) => (it.toppings ?? []).map((t) => typeof t === "number" ? t : t.id)))];
-  let toppingsById = new Map();
-  if (allToppingIds.length > 0) {
-    const ph = allToppingIds.map(() => "?").join(",");
-    const tpResult = await env.DB.prepare(
-      `SELECT id, price, is_topping, available FROM products WHERE id IN (${ph}) AND is_topping = 1 AND available = 1`
-    ).bind(...allToppingIds).all();
-    for (const t of tpResult.results) toppingsById.set(t.id, { price: t.price, is_topping: t.is_topping, available: t.available });
-  }
-  const catIds = [...new Set([...productsById.values()].map((p) => p.category_id))];
-  let allowAllByCategory = new Map();
-  let allowedToppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const ph = catIds.map(() => "?").join(",");
-    const catResult = await env.DB.prepare(
-      `SELECT id, allow_all_toppings FROM categories WHERE id IN (${ph})`
-    ).bind(...catIds).all();
-    for (const c of catResult.results) allowAllByCategory.set(c.id, c.allow_all_toppings);
-    const ctResult = await env.DB.prepare(
-      `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${ph})`
-    ).bind(...catIds).all();
-    for (const r of ctResult.results) {
-      if (!allowedToppingsByCategory.has(r.category_id)) allowedToppingsByCategory.set(r.category_id, new Set());
-      allowedToppingsByCategory.get(r.category_id).add(r.product_id);
-    }
-  }
+  // Menu data từ cache in-memory (15s TTL) — không cần query riêng mỗi lần
+  const menuData = await getMenuData(env);
+  const productsById = menuData.productsById;
+  const sizesById = menuData.sizesById;
+  const toppingsById = menuData.toppingsById;
+  const allowAllByCategory = menuData.allowAllByCategory;
+  const allowedToppingsByCategory = menuData.allowedToppingsByCategory;
   for (const it of body.items) {
     const product = productsById.get(it.product_id);
     if (!product || !product.available) continue;
@@ -2640,6 +2641,8 @@ async function handleReportsCategorySales(env, url) {
   })));
 }
 async function invalidateMenuCaches(env) {
+  // Hủy cache menu in-memory (dùng khi tạo đơn — tránh đọc lại products/sizes/categories mỗi lần)
+  menuDataCache = null;
   const keys = [
     new Request("https://cache/api/menu"),
     new Request("https://cache/api/public/takeaway/menu"),
