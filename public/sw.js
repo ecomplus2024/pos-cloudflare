@@ -1,5 +1,5 @@
 // public/sw.js - PWA Service Worker cho POS
-const CACHE_NAME = 'pos-v3';
+const CACHE_NAME = 'pos-v4';
 
 // Precache list — chỉ static files không thay đổi (JS/CSS/HTML dùng network-first)
 const PRECACHE_URLS = [

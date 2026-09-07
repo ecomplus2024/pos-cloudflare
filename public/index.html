@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Menu POS Demo</title>
+    <title>POS Quán</title>
     <meta name="description" content="Demo POS chạy trên Cloudflare Workers + D1" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#3b82f6" />
+    <meta name="theme-color" content="#6366f1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
@@ -94,18 +94,26 @@
           navigator.serviceWorker.register('/sw.js')
             .then(reg => {
               console.log('SW registered:', reg.scope);
-              // Listen for updates
+              // Listen for updates — auto reload khi có bản mới
               reg.addEventListener('updatefound', () => {
                 const newWorker = reg.installing;
                 newWorker.addEventListener('statechange', () => {
                   if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    // Có bản mới — có thể show notification
-                    console.log('New SW available');
+                    console.log('New SW available — auto reloading');
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
                   }
                 });
               });
             })
             .catch(err => console.error('SW registration failed:', err));
+          // Reload trang khi SW mới tiếp quản
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!refreshing) {
+              refreshing = true;
+              window.location.reload();
+            }
+          });
         });
       }
     </script>

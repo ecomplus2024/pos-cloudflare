@@ -177,13 +177,16 @@ async function handleMenu(env) {
        WHERE available = 1 ORDER BY name`
     ).all()
   ]);
+  // D1 limits SQL variables per query. Batch IN-clause queries (batch size 80).
+  const BATCH = 80;
   const productIds = productsResult.results.map((p) => p.id);
   let sizesByProduct = new Map();
-  if (productIds.length > 0) {
-    const placeholders = productIds.map(() => "?").join(",");
+  for (let i = 0; i < productIds.length; i += BATCH) {
+    const chunk = productIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const sizesResult = await env.DB.prepare(
       `SELECT id, product_id, name, price FROM product_sizes WHERE product_id IN (${placeholders}) ORDER BY sort_order, id`
-    ).bind(...productIds).all();
+    ).bind(...chunk).all();
     for (const s of sizesResult.results) {
       if (!sizesByProduct.has(s.product_id)) sizesByProduct.set(s.product_id, []);
       sizesByProduct.get(s.product_id).push({ id: s.id, name: s.name, price: s.price });
@@ -191,11 +194,12 @@ async function handleMenu(env) {
   }
   const catIds = categoriesResult.results.map((c) => c.id);
   let toppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const placeholders = catIds.map(() => "?").join(",");
+  for (let i = 0; i < catIds.length; i += BATCH) {
+    const chunk = catIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const ctResult = await env.DB.prepare(
       `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${placeholders})`
-    ).bind(...catIds).all();
+    ).bind(...chunk).all();
     for (const r of ctResult.results) {
       if (!toppingsByCategory.has(r.category_id)) toppingsByCategory.set(r.category_id, []);
       toppingsByCategory.get(r.category_id).push(r.product_id);
@@ -739,13 +743,15 @@ async function handlePublicMenu(env, tableId) {
     `SELECT id, category_id, name, price, image_url, available, is_topping, production_unit
      FROM products WHERE available = 1`
   ).all();
+  const BATCH = 80;
   const productIds = productsResult.results.map((p) => p.id);
   let sizesByProduct = new Map();
-  if (productIds.length > 0) {
-    const placeholders = productIds.map(() => "?").join(",");
+  for (let i = 0; i < productIds.length; i += BATCH) {
+    const chunk = productIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const sizesResult = await env.DB.prepare(
       `SELECT id, product_id, name, price FROM product_sizes WHERE product_id IN (${placeholders}) ORDER BY sort_order, id`
-    ).bind(...productIds).all();
+    ).bind(...chunk).all();
     for (const s of sizesResult.results) {
       if (!sizesByProduct.has(s.product_id)) sizesByProduct.set(s.product_id, []);
       sizesByProduct.get(s.product_id).push({ id: s.id, name: s.name, price: s.price });
@@ -753,11 +759,12 @@ async function handlePublicMenu(env, tableId) {
   }
   const catIds = categoriesResult.results.map((c) => c.id);
   let toppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const placeholders = catIds.map(() => "?").join(",");
+  for (let i = 0; i < catIds.length; i += BATCH) {
+    const chunk = catIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const ctResult = await env.DB.prepare(
       `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${placeholders})`
-    ).bind(...catIds).all();
+    ).bind(...chunk).all();
     for (const r of ctResult.results) {
       if (!toppingsByCategory.has(r.category_id)) toppingsByCategory.set(r.category_id, []);
       toppingsByCategory.get(r.category_id).push(r.product_id);
@@ -1349,13 +1356,15 @@ async function handleTakeawayMenu(env) {
     `SELECT id, category_id, name, price, image_url, available, is_topping, production_unit
      FROM products WHERE available = 1`
   ).all();
+  const BATCH = 80;
   const productIds = productsResult.results.map((p) => p.id);
   let sizesByProduct = new Map();
-  if (productIds.length > 0) {
-    const placeholders = productIds.map(() => "?").join(",");
+  for (let i = 0; i < productIds.length; i += BATCH) {
+    const chunk = productIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const sizesResult = await env.DB.prepare(
       `SELECT id, product_id, name, price FROM product_sizes WHERE product_id IN (${placeholders}) ORDER BY sort_order, id`
-    ).bind(...productIds).all();
+    ).bind(...chunk).all();
     for (const s of sizesResult.results) {
       if (!sizesByProduct.has(s.product_id)) sizesByProduct.set(s.product_id, []);
       sizesByProduct.get(s.product_id).push({ id: s.id, name: s.name, price: s.price });
@@ -1363,11 +1372,12 @@ async function handleTakeawayMenu(env) {
   }
   const catIds = categoriesResult.results.map((c) => c.id);
   let toppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const placeholders = catIds.map(() => "?").join(",");
+  for (let i = 0; i < catIds.length; i += BATCH) {
+    const chunk = catIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const ctResult = await env.DB.prepare(
       `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${placeholders})`
-    ).bind(...catIds).all();
+    ).bind(...chunk).all();
     for (const r of ctResult.results) {
       if (!toppingsByCategory.has(r.category_id)) toppingsByCategory.set(r.category_id, []);
       toppingsByCategory.get(r.category_id).push(r.product_id);
@@ -1633,13 +1643,15 @@ async function handleShipMenu(env) {
     `SELECT id, category_id, name, price, image_url, available, is_topping, production_unit
      FROM products WHERE available = 1`
   ).all();
+  const BATCH = 80;
   const productIds = productsResult.results.map((p) => p.id);
   let sizesByProduct = new Map();
-  if (productIds.length > 0) {
-    const placeholders = productIds.map(() => "?").join(",");
+  for (let i = 0; i < productIds.length; i += BATCH) {
+    const chunk = productIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const sizesResult = await env.DB.prepare(
       `SELECT id, product_id, name, price FROM product_sizes WHERE product_id IN (${placeholders}) ORDER BY sort_order, id`
-    ).bind(...productIds).all();
+    ).bind(...chunk).all();
     for (const s of sizesResult.results) {
       if (!sizesByProduct.has(s.product_id)) sizesByProduct.set(s.product_id, []);
       sizesByProduct.get(s.product_id).push({ id: s.id, name: s.name, price: s.price });
@@ -1647,11 +1659,12 @@ async function handleShipMenu(env) {
   }
   const catIds = categoriesResult.results.map((c) => c.id);
   let toppingsByCategory = new Map();
-  if (catIds.length > 0) {
-    const placeholders = catIds.map(() => "?").join(",");
+  for (let i = 0; i < catIds.length; i += BATCH) {
+    const chunk = catIds.slice(i, i + BATCH);
+    const placeholders = chunk.map(() => "?").join(",");
     const ctResult = await env.DB.prepare(
       `SELECT category_id, product_id FROM category_toppings WHERE category_id IN (${placeholders})`
-    ).bind(...catIds).all();
+    ).bind(...chunk).all();
     for (const r of ctResult.results) {
       if (!toppingsByCategory.has(r.category_id)) toppingsByCategory.set(r.category_id, []);
       toppingsByCategory.get(r.category_id).push(r.product_id);
@@ -2388,13 +2401,21 @@ async function handleAdminUpdateDeleteTable(env, tableId, request) {
   await invalidateMenuCaches(env);
   return json({ message: "Table updated" });
 }
-async function handleOrderHistory(env) {
-  const orders = await env.DB.prepare(
-    `SELECT o.id, o.table_id, o.table_position, o.order_type, o.total, o.status, o.customer_name, o.created_at, t.name as table_name
+async function handleOrderHistory(env, tableId = null) {
+  let query = `SELECT o.id, o.table_id, o.table_position, o.order_type, o.total, o.status, o.customer_name, o.created_at, t.name as table_name
      FROM orders o LEFT JOIN tables t ON t.id = o.table_id
-     WHERE o.status = 'completed'
-     ORDER BY o.created_at DESC LIMIT 100`
-  ).all();
+     WHERE o.status = 'completed'`;
+  const params = [];
+  if (tableId) {
+    query += ` AND o.table_id = ?`;
+    params.push(tableId);
+  }
+  query += ` ORDER BY o.created_at DESC LIMIT ?`;
+  params.push(tableId ? 20 : 100);
+  const stmt = params.length > 0
+    ? env.DB.prepare(query).bind(...params)
+    : env.DB.prepare(query);
+  const orders = await stmt.all();
   const results = [];
   for (const o of orders.results) {
     const items = await env.DB.prepare(
@@ -3266,7 +3287,8 @@ var worker_default = {
       const auth = await requireAuth(env, request);
       if (!auth.valid) return auth.error;
       try {
-        return await handleOrderHistory(env);
+        const tableId = url.searchParams.get("table_id");
+        return await handleOrderHistory(env, tableId ? Number(tableId) : null);
       } catch (err) {
         return json({ error: String(err) }, 500);
       }

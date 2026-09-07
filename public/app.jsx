@@ -6,10 +6,23 @@
 //
 // React 18 + ReactDOM 18 UMD load từ CDN, JSX transform bởi Babel standalone
 
-const { useState, useEffect, useMemo, useRef, useCallback } = React;
+const { useState, useEffect, useMemo, useRef, useCallback, createContext, useContext } = React;
 
 // ============ Helpers ============
 const formatVND = (amount) => new Intl.NumberFormat("vi-VN").format(amount) + " đ";
+
+// Image optimization: responsive srcset with 200px + 100px WebP thumbnails
+function OptimizedImg({ src, alt, className, width, height, ...props }) {
+  if (!src) return null;
+  let imgSrc = src, srcSet, sizes;
+  if (src.includes("/pos-uploads/200/")) {
+    srcSet = src.replace("/200/", "/100/") + " 100w, " + src + " 200w";
+    sizes = "(max-width: 640px) 100px, 200px";
+  }
+  return <img src={imgSrc} srcSet={srcSet} sizes={sizes} alt={alt || ""}
+    loading="lazy" decoding="async" width={width} height={height}
+    className={className} {...props} />;
+}
 
 // Fix 15: Search bỏ dấu tiếng Việt
 const removeAccents = (str) => str.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
@@ -585,7 +598,203 @@ const playBeep = () => {
   } catch {}
 };
 
+// ============ Global Sync: Extracted fetch functions (pure, no setState) ============
+async function fetchTablesData() {
+  const tbl = await authFetch("/api/tables");
+  return { tables: tbl.tables || [], serverTime: tbl.server_time };
+}
+
+async function fetchMergedOrders() {
+  const [dineinData, takeawayData] = await Promise.all([
+    authFetch("/api/orders").catch(() => ({ orders: [] })),
+    authFetch("/api/takeaway?status=pending").catch(() => []),
+  ]);
+  const dinein = (dineinData.orders || []).map((o) => ({ ...o, _kind: "dinein" }));
+  const takeawayOrShip = (Array.isArray(takeawayData) ? takeawayData : []).map((o) => ({
+    ...o, _kind: o.order_type === "ship" ? "ship" : "takeaway",
+  }));
+  return [...dinein, ...takeawayOrShip].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+}
+
+async function fetchStaffCallsData() {
+  const calls = await authFetch("/api/staff-calls");
+  return Array.isArray(calls) ? calls : [];
+}
+
+async function fetchKitchenOrdersData(unit) {
+  const [ordersResp, eventsResp] = await Promise.all([
+    authFetch(`/api/orders/kitchen?unit=${unit}`),
+    authFetch(`/api/orders/kitchen/cancellation-events?unit=${unit}&hours=12`),
+  ]);
+  const orders = Array.isArray(ordersResp) ? ordersResp : [];
+  const events = Array.isArray(eventsResp) ? eventsResp : [];
+  const cancelledMap = {};
+  for (const ev of events) {
+    const itemId = parseInt(ev.item_id, 10);
+    if (!Number.isFinite(itemId) || cancelledMap[itemId]) continue;
+    cancelledMap[itemId] = {
+      event_id: ev.event_id, action: ev.action,
+      old_quantity: ev.old_quantity, new_quantity: ev.new_quantity,
+      product_name: ev.product_name, table_name: ev.table_name, created_at: ev.created_at,
+    };
+  }
+  return { orders, cancelledMap };
+}
+
+// ============ Global Sync: Context + Polling Hook + Provider ============
+const SyncContext = createContext(null);
+
+function useSyncPolling() {
+  const [tables, setTables] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [staffCalls, setStaffCalls] = useState([]);
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
+  const [kitchenOrders, setKitchenOrders] = useState([]);
+  const [counterOrders, setCounterOrders] = useState([]);
+  const [kitchenCancelled, setKitchenCancelled] = useState({});
+  const [counterCancelled, setCounterCancelled] = useState({});
+
+  // Change-detection refs
+  const lastTablesKeyRef = useRef("");
+  const lastKitchenKeyRef = useRef("");
+  const lastCounterKeyRef = useRef("");
+
+  // Notification refs (PosApp reads these to play beep/toast)
+  const staffCallsRef = useRef([]);
+  const newStaffCallsRef = useRef([]);
+  const prevKitchenOrderIdsRef = useRef(new Set());
+  const prevCounterOrderIdsRef = useRef(new Set());
+  const newKitchenAlertRef = useRef(false);
+  const newCounterAlertRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const poll = async () => {
+      // 1. Parallel change-key checks
+      const [tablesChange, kitchenChange, counterChange] = await Promise.all([
+        authFetch("/api/changes?ctx=tables").catch(() => null),
+        authFetch("/api/changes?ctx=kitchen&unit=kitchen").catch(() => null),
+        authFetch("/api/changes?ctx=kitchen&unit=counter").catch(() => null),
+      ]);
+      if (cancelled) return;
+
+      // 2. Fetch full data only when key changed
+      const tasks = [];
+
+      // Tables context
+      if (tablesChange && tablesChange.key !== lastTablesKeyRef.current) {
+        lastTablesKeyRef.current = tablesChange.key;
+        tasks.push(
+          (async () => {
+            const [tblData, callsData, ordersData] = await Promise.all([
+              fetchTablesData().catch(() => null),
+              fetchStaffCallsData().catch(() => []),
+              fetchMergedOrders().catch(() => []),
+            ]);
+            if (cancelled) return;
+            if (tblData) {
+              setTables(tblData.tables);
+              if (tblData.serverTime) {
+                const offset = new Date(tblData.serverTime).getTime() - Date.now();
+                if (Number.isFinite(offset)) setServerOffsetMs(offset);
+              }
+            }
+            // Detect new staff calls
+            const prevIds = new Set(staffCallsRef.current.map((c) => c.id));
+            const newCalls = callsData.filter((c) => !prevIds.has(c.id));
+            if (newCalls.length > 0) newStaffCallsRef.current.push(...newCalls);
+            staffCallsRef.current = callsData;
+            setStaffCalls(callsData);
+            setOrders(ordersData);
+          })()
+        );
+      }
+
+      // Kitchen context
+      if (kitchenChange && kitchenChange.key !== lastKitchenKeyRef.current) {
+        lastKitchenKeyRef.current = kitchenChange.key;
+        tasks.push(
+          (async () => {
+            const data = await fetchKitchenOrdersData("kitchen").catch(() => null);
+            if (cancelled || !data) return;
+            // Detect new orders for audio alert
+            const newIds = new Set(data.orders.map((o) => o.id));
+            for (const id of newIds) {
+              if (!prevKitchenOrderIdsRef.current.has(id)) { newKitchenAlertRef.current = true; break; }
+            }
+            prevKitchenOrderIdsRef.current = newIds;
+            setKitchenOrders(data.orders);
+            setKitchenCancelled(data.cancelledMap);
+          })()
+        );
+      }
+
+      // Counter context
+      if (counterChange && counterChange.key !== lastCounterKeyRef.current) {
+        lastCounterKeyRef.current = counterChange.key;
+        tasks.push(
+          (async () => {
+            const data = await fetchKitchenOrdersData("counter").catch(() => null);
+            if (cancelled || !data) return;
+            const newIds = new Set(data.orders.map((o) => o.id));
+            for (const id of newIds) {
+              if (!prevCounterOrderIdsRef.current.has(id)) { newCounterAlertRef.current = true; break; }
+            }
+            prevCounterOrderIdsRef.current = newIds;
+            setCounterOrders(data.orders);
+            setCounterCancelled(data.cancelledMap);
+          })()
+        );
+      }
+
+      if (tasks.length > 0) await Promise.all(tasks);
+    };
+
+    // Immediate first poll, then every 1s
+    poll();
+    const interval = setInterval(poll, 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // Imperative refresh helpers (for mutation handlers)
+  const refreshTables = useCallback(async () => {
+    try {
+      const tblData = await fetchTablesData();
+      setTables(tblData.tables);
+      if (tblData.serverTime) {
+        const offset = new Date(tblData.serverTime).getTime() - Date.now();
+        if (Number.isFinite(offset)) setServerOffsetMs(offset);
+      }
+    } catch {}
+  }, []);
+
+  const refreshOrders = useCallback(async () => {
+    try {
+      const data = await fetchMergedOrders();
+      setOrders(data);
+    } catch {}
+  }, []);
+
+  return {
+    tables, setTables, orders, setOrders, staffCalls, setStaffCalls, serverOffsetMs,
+    kitchenOrders, counterOrders, kitchenCancelled, counterCancelled,
+    refreshTables, refreshOrders,
+    newStaffCallsRef, newKitchenAlertRef, newCounterAlertRef,
+  };
+}
+
+function SyncProvider({ children }) {
+  const syncData = useSyncPolling();
+  return <SyncContext.Provider value={syncData}>{children}</SyncContext.Provider>;
+}
+
 function PosApp({ user, onLogout }) {
+  // Global sync: consume shared data from SyncProvider
+  const sync = useContext(SyncContext);
+  const { tables, setTables, orders, setOrders, staffCalls, setStaffCalls, serverOffsetMs,
+          refreshTables, refreshOrders, newStaffCallsRef, newKitchenAlertRef, newCounterAlertRef } = sync;
+
   // Batch 3: URL sync — read initial tab from URL
   const initialTab = (() => {
     try { return new URLSearchParams(window.location.search).get('tab') || 'tables'; } catch { return 'tables'; }
@@ -610,8 +819,6 @@ function PosApp({ user, onLogout }) {
   const [storeName, setStoreName] = useState("Đang tải...");
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
-  const [tables, setTables] = useState([]);
-  const [orders, setOrders] = useState([]);
   const [tableFilterTab, setTableFilterTab] = useState("tables"); // "tables" | "takeaway" | "ship"
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -641,6 +848,10 @@ function PosApp({ user, onLogout }) {
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [selectedPosition, setSelectedPosition] = useState("A");
   const [showPositionPicker, setShowPositionPicker] = useState(false);
+  // Table order history
+  const [tableHistory, setTableHistory] = useState(null); // { tableId, tableName, orders }
+  const [tableHistoryLoading, setTableHistoryLoading] = useState(false);
+  const [tableHistoryDetail, setTableHistoryDetail] = useState(null); // order object for detail view
 
   // Batch 2 Fix 6: takeaway/ship flow from POS
   const [takeawayOrders, setTakeawayOrders] = useState([]);
@@ -648,10 +859,6 @@ function PosApp({ user, onLogout }) {
   const [takeawayCustomerName, setTakeawayCustomerName] = useState("");
   const [pendingTakeawayCart, setPendingTakeawayCart] = useState(null);
   const [takeawayPaymentModal, setTakeawayPaymentModal] = useState(null); // { orderId }
-  // Batch 2 Fix 7: staff calls polling
-  const [staffCalls, setStaffCalls] = useState([]);
-  // Batch 2 Fix 8: server clock offset for timer
-  const [serverOffsetMs, setServerOffsetMs] = useState(0);
   // Batch 2 Fix 10: delete confirm + reduce quantity modals
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null); // { cartIndex, orderItemId, name }
   const [reduceModalItem, setReduceModalItem] = useState(null); // { cartIndex, orderItemId, name, currentQty }
@@ -661,105 +868,23 @@ function PosApp({ user, onLogout }) {
   const prevCounterCount = useRef(0);
 
   useEffect(() => {
-    Promise.all([
-      authFetch("/api/menu").catch(() => { throw new Error("menu"); }),
-      authFetch("/api/tables").catch(() => { throw new Error("tables"); }),
-    ])
-      .then(([menu, tbl]) => {
+    authFetch("/api/menu")
+      .then((menu) => {
         setStoreName(menu.store_name || "POS Demo");
         setCategories(menu.categories || []);
         const prods = (menu.products || []).filter((p) => !p.is_topping);
         const tops = (menu.products || []).filter((p) => p.is_topping);
         setProducts(prods);
         setToppings(tops);
-        setTables(tbl.tables || []);
       })
       .catch(() => {
         setStoreName(MOCK_MENU.store_name + " (preview)");
         setCategories(MOCK_MENU.categories);
         setProducts(MOCK_MENU.products);
-        setTables(MOCK_MENU.tables);
         setUsingMock(true);
       });
+    // Tables are loaded by SyncProvider's initial poll — no need to fetch here
   }, []);
-
-  // Change-detection polling: lightweight /api/changes check, fetch full only when key changes
-  const staffCallsRef = useRef([]);
-  const lastChangesKeyRef = useRef("");
-  useEffect(() => {
-    if (view !== "tables" && view !== "orders") return;
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-      let shouldFetch = true;
-      try {
-        // Step 1: lightweight change check (~1 D1 query)
-        const changes = await authFetch("/api/changes?ctx=tables");
-        if (changes.key === lastChangesKeyRef.current) {
-          shouldFetch = false; // no change → skip
-        } else {
-          lastChangesKeyRef.current = changes.key;
-        }
-      } catch {
-        // /api/changes failed → always fetch full data as fallback
-      }
-      if (!shouldFetch) return;
-
-      // Step 2: changes detected (or fallback) → fetch full data
-      try {
-        const tbl = await authFetch("/api/tables");
-        if (tbl.server_time) {
-          const offset = new Date(tbl.server_time).getTime() - Date.now();
-          if (Number.isFinite(offset)) setServerOffsetMs(offset);
-        }
-        setTables(tbl.tables || []);
-        if (selectedTable) {
-          const updated = (tbl.tables || []).find((t) => t.id === selectedTable.id);
-          if (updated) setSelectedTable(updated);
-        }
-      } catch {}
-      try {
-        const calls = await authFetch("/api/staff-calls");
-        const list = Array.isArray(calls) ? calls : [];
-        const prev = staffCallsRef.current;
-        const prevIds = new Set(prev.map((c) => c.id));
-        const fresh = list.filter((c) => !prevIds.has(c.id));
-        for (const c of fresh) {
-          showToast(`${c.table_name || "Bàn " + c.table_id} gọi nhân viên`);
-          playBeep();
-        }
-        staffCallsRef.current = list;
-        setStaffCalls(list);
-      } catch {}
-    };
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [view, selectedTable?.id]);
-
-  // Orders view: also use change detection (same key covers orders + order_items)
-  useEffect(() => {
-    if (view !== "orders") return;
-    let cancelled = false;
-    const poll = async () => {
-      if (cancelled) return;
-      let shouldFetch = true;
-      try {
-        const changes = await authFetch("/api/changes?ctx=tables");
-        if (changes.key === lastChangesKeyRef.current) {
-          shouldFetch = false;
-        } else {
-          lastChangesKeyRef.current = changes.key;
-        }
-      } catch {}
-      if (!shouldFetch) return;
-      loadOrders();
-      fetchTakeawayOrders();
-    };
-    poll();
-    const interval = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [view]);
 
   const showToast = (msg) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -767,10 +892,31 @@ function PosApp({ user, onLogout }) {
     toastTimer.current = setTimeout(() => setToast(null), 2000);
   };
 
-  // Load orders when entering tables view (for takeaway/ship filter tabs)
+  // Staff call notifications: detect new calls from sync context, show toast + beep
   useEffect(() => {
-    if (view === "tables") loadOrders();
-  }, [view]);
+    const newCalls = newStaffCallsRef.current;
+    if (newCalls && newCalls.length > 0) {
+      for (const c of newCalls) {
+        showToast(`${c.table_name || "Bàn " + c.table_id} gọi nhân viên`);
+        playBeep();
+      }
+      newStaffCallsRef.current = [];
+    }
+  });
+
+  // Kitchen/counter audio alerts from sync context
+  useEffect(() => {
+    if (newKitchenAlertRef.current) { playBeep(); newKitchenAlertRef.current = false; }
+    if (newCounterAlertRef.current) { playBeep(); newCounterAlertRef.current = false; }
+  });
+
+  // Keep selectedTable in sync when context updates tables
+  useEffect(() => {
+    if (selectedTable) {
+      const updated = tables.find((t) => t.id === selectedTable.id);
+      if (updated) setSelectedTable(updated);
+    }
+  }, [tables, selectedTable?.id]);
 
   // Batch 3: auto-select first category when entering menu view
   useEffect(() => {
@@ -1005,56 +1151,6 @@ function PosApp({ user, onLogout }) {
     
   };
 
-  // Batch 2 Fix 9: loadOrders — fetch dine-in orders + pending takeaway/ship, merged sorted by created_at DESC
-  const loadOrders = async () => {
-    try {
-      const [dineinData, takeawayData] = await Promise.all([
-        authFetch("/api/orders").catch(() => ({ orders: [] })),
-        authFetch("/api/takeaway?status=pending").catch(() => []),
-      ]);
-      const dinein = (dineinData.orders || []).map((o) => ({ ...o, _kind: "dinein" }));
-      const takeawayOrShip = (Array.isArray(takeawayData) ? takeawayData : []).map((o) => ({
-        ...o,
-        _kind: o.order_type === "ship" ? "ship" : "takeaway",
-      }));
-      const merged = [...dinein, ...takeawayOrShip].sort((a, b) => {
-        const ta = a.created_at || "";
-        const tb = b.created_at || "";
-        return tb.localeCompare(ta);
-      });
-      setOrders(merged);
-    } catch {
-      setOrders([]);
-    }
-  };
-
-  // Batch 2 Fix 6: fetch takeaway orders for POS cashier
-  const fetchTakeawayOrders = async () => {
-    try {
-      const d = await authFetch("/api/takeaway?status=pending");
-      setTakeawayOrders(Array.isArray(d) ? d : []);
-    } catch {
-      setTakeawayOrders([]);
-    }
-  };
-
-  // Fix 3: refresh tables list via authFetch and update local state
-  const refreshTables = async () => {
-    try {
-      const tbl = await authFetch("/api/tables");
-      // Fix 8: sync server clock offset for real table timers
-      if (tbl.server_time) {
-        const offset = new Date(tbl.server_time).getTime() - Date.now();
-        if (Number.isFinite(offset)) setServerOffsetMs(offset);
-      }
-      setTables(tbl.tables || []);
-      if (selectedTable) {
-        const updated = (tbl.tables || []).find((t) => t.id === selectedTable.id);
-        if (updated) setSelectedTable(updated);
-      }
-    } catch {}
-  };
-
   // Fix 1: delta-only submit + reuse pending order
   // "Báo chế biến": send only new items since last submit; server reuses existing pending order
   const submitOrder = async (tableToOrder = null) => {
@@ -1114,7 +1210,7 @@ function PosApp({ user, onLogout }) {
       setCurrentOrderId(data.order_id);
       setSubmitting(false);
       refreshTables();
-      loadOrders();
+      refreshOrders();
     } catch (err) {
       showToast("Lỗi gửi bếp: " + err.message);
       setSubmitting(false);
@@ -1154,8 +1250,7 @@ function PosApp({ user, onLogout }) {
       await refreshTables();
       setShowCheckout(false);
       showToast(`Đã gửi đơn ${orderType === "takeaway" ? "mang về" : "ship"} ${r.display_code || "#" + r.order_id}`);
-      loadOrders();
-      fetchTakeawayOrders();
+      refreshOrders();
       setTimeout(() => { clearCart(); setView("tables"); }, 1200);
     } catch (err) {
       showToast("Lỗi: " + err.message);
@@ -1237,10 +1332,25 @@ function PosApp({ user, onLogout }) {
     try {
       await authFetch(`/api/staff-calls/${callId}/resolve`, { method: "POST" });
       setStaffCalls((prev) => prev.filter((c) => c.id !== callId));
-      staffCallsRef.current = staffCallsRef.current.filter((c) => c.id !== callId);
       showToast("Đã xử lý gọi nhân viên");
     } catch (err) {
       showToast("Lỗi: " + err.message);
+    }
+  };
+
+  // Xem lịch sử đơn hàng của bàn
+  const openTableHistory = async (e, t) => {
+    e.stopPropagation(); // không mở bàn khi bấm lịch sử
+    setTableHistoryLoading(true);
+    setTableHistory({ tableId: t.id, tableName: t.name, orders: [] });
+    try {
+      const data = await authFetch(`/api/orders/history?table_id=${t.id}`);
+      setTableHistory({ tableId: t.id, tableName: t.name, orders: data || [] });
+    } catch (err) {
+      showToast("Lỗi tải lịch sử: " + err.message);
+      setTableHistory(null);
+    } finally {
+      setTableHistoryLoading(false);
     }
   };
 
@@ -1255,8 +1365,7 @@ function PosApp({ user, onLogout }) {
         body: JSON.stringify({ payment_method: pm }),
       });
       showToast("Đã hoàn thành đơn");
-      await fetchTakeawayOrders();
-      loadOrders();
+      await refreshOrders();
     } catch (err) {
       showToast("Lỗi: " + err.message);
     }
@@ -1268,11 +1377,15 @@ function PosApp({ user, onLogout }) {
   //     đúng 1 vị trí có khách → mở luôn vị trí đó để xem;
   //     nhiều hơn 1 → mới hiện modal chọn vị trí.
   const handleTableClick = (t) => {
+    // Nếu đang ở ORDER NHANH (không có bàn) mà giỏ có items → chỉ gán bàn, giữ giỏ
+    const isAssignFromQuickOrder = !selectedTable && cart.length > 0;
     setSelectedTable(t);
     setSelectedCategory(null);
-    setCart([]);
-    setInitialCart([]);
-    setCurrentOrderId(null);
+    if (!isAssignFromQuickOrder) {
+      setCart([]);
+      setInitialCart([]);
+      setCurrentOrderId(null);
+    }
 
     setEditingNotesIndex(null);
     setEditingPriceIndex(null);
@@ -1442,6 +1555,12 @@ function PosApp({ user, onLogout }) {
                         isSelected ? "border-red-500 shadow-md" : occupied ? "border-red-200 hover:border-red-400" : "border-gray-200 hover:border-gray-400"
                       }`}>
                       <div className={`absolute top-3 right-3 w-3 h-3 rounded-full ${occupied ? "bg-red-400" : "bg-gray-300"}`}></div>
+                      {/* Nút lịch sử đơn */}
+                      <div onClick={(e) => openTableHistory(e, t)}
+                        className="absolute bottom-3 right-3 w-8 h-8 rounded-lg bg-gray-100 hover:bg-blue-100 flex items-center justify-center transition cursor-pointer"
+                        title="Lịch sử đơn hàng">
+                        <Icon name="clock" className="w-4 h-4 text-gray-400 hover:text-blue-500" />
+                      </div>
                       <div className={`font-black text-base mb-3 ${isSelected ? "text-red-600" : "text-blue-900"}`}>{t.name}</div>
                       {occupied && t.pending_order ? (
                         <div className="space-y-1">
@@ -1470,24 +1589,47 @@ function PosApp({ user, onLogout }) {
                           const statusColor = o.status === "completed" || o.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700";
                           const statusLabel = o.status === "completed" || o.status === "paid" ? "Hoàn tất" : "Chờ";
                           return (
-                            <div key={`takeaway-${o.id}`} className="bg-white p-3 rounded-lg border border-orange-200 flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs px-2 py-1 rounded-full font-medium bg-orange-100 text-orange-700">MV</span>
-                                <div>
-                                  <div className="font-semibold">{displayName}</div>
-                                  <div className="text-xs text-gray-500">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</div>
+                            <div key={`takeaway-${o.id}`} className="bg-white p-3 rounded-lg border border-orange-200 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs px-2 py-1 rounded-full font-medium bg-orange-100 text-orange-700">MV</span>
+                                  <div>
+                                    <div className="font-semibold">{displayName}</div>
+                                    <div className="text-xs text-gray-500">{o.created_at ? new Date(o.created_at).toLocaleTimeString("vi-VN") : ""}</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="font-bold text-orange-600">{formatVND(o.total_amount ?? o.total)}</span>
+                                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-3">
-                                <span className="font-bold text-orange-600">{formatVND(o.total_amount ?? o.total)}</span>
-                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusColor}`}>{statusLabel}</span>
-                                {o.status !== "completed" && (
+                              {/* Danh sách món */}
+                              {o.items && o.items.length > 0 && (
+                                <div className="border-t border-gray-100 pt-1.5 space-y-0.5">
+                                  {o.items.map((it, idx) => (
+                                    <div key={idx} className="flex items-baseline gap-2 text-xs">
+                                      <span className="text-gray-400 w-6 shrink-0">×{it.quantity}</span>
+                                      <span className="flex-1 text-gray-800">{it.name}{it.size_name && <span className="text-gray-400"> ({it.size_name})</span>}{it.toppings?.length > 0 && <span className="text-gray-400"> + {it.toppings.join(", ")}</span>}</span>
+                                      <span className="text-gray-600 tabular-nums">{(it.price * it.quantity).toLocaleString()}đ</span>
+                                    </div>
+                                  ))}
+                                  {o.items.some(it => it.note) && (
+                                    <div className="pt-1 space-y-0.5">
+                                      {o.items.filter(it => it.note).map((it, idx) => (
+                                        <div key={`note-${idx}`} className="text-xs text-orange-600 italic">💬 {it.name}: {it.note}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {o.status !== "completed" && (
+                                <div className="flex justify-end pt-1">
                                   <button onClick={() => setTakeawayPaymentModal({ orderId: o.id, paymentMethod: "cash" })}
                                     className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700">
                                     Hoàn tất
                                   </button>
-                                )}
-                              </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1632,7 +1774,7 @@ function PosApp({ user, onLogout }) {
                           className="bg-white p-3 rounded-xl shadow-[0_3px_10px_rgba(15,23,42,0.07)] border border-transparent hover:border-primary-500 hover:shadow-[0_8px_20px_rgba(15,23,42,0.12)] transition-all cursor-pointer group flex flex-col items-center text-center h-full min-h-[182px]">
                           <div className="relative h-24 w-24 bg-white rounded-lg mb-3 overflow-hidden shadow-inner flex-shrink-0 border border-gray-100 flex items-center justify-center">
                             {p.image_url
-                              ? <img src={p.image_url} alt="" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                              ? <OptimizedImg src={p.image_url} width="96" height="96" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
                               : <div className="w-full h-full bg-gray-50" />}
                             <div className="absolute bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-white/85 backdrop-blur-sm border border-white/80 shadow-sm">
                               <p className="text-primary-600 font-bold text-[11px] leading-none">{displayPrice.toLocaleString()}đ</p>
@@ -1655,7 +1797,7 @@ function PosApp({ user, onLogout }) {
                           className="bg-white p-3 rounded-2xl flex items-center space-x-4 shadow-[0_3px_10px_rgba(15,23,42,0.06)] border border-gray-100 transition-all active:scale-95">
                           <div className="w-16 h-16 rounded-xl overflow-hidden bg-white flex-shrink-0 border border-gray-100 flex items-center justify-center">
                             {p.image_url
-                              ? <img src={p.image_url} alt="" className="w-full h-full object-cover" />
+                              ? <OptimizedImg src={p.image_url} width="64" height="64" className="w-full h-full object-cover" />
                               : <div className="w-full h-full bg-white" />}
                           </div>
                           <div className="flex-1">
@@ -1867,7 +2009,7 @@ function PosApp({ user, onLogout }) {
                   <div onClick={() => openToppingModal(idx)}
                     className="w-12 h-12 rounded-lg bg-gray-50 overflow-hidden flex-shrink-0 shadow-sm border border-gray-100 md:cursor-pointer hover:ring-2 hover:ring-primary-300 transition-all">
                     {it.image_url
-                      ? <img src={it.image_url} alt="" className="w-full h-full object-cover" />
+                      ? <OptimizedImg src={it.image_url} width="48" height="48" className="w-full h-full object-cover" />
                       : <div className="w-full h-full flex items-center justify-center text-gray-300"><Icon name="utensils" className="w-8 h-8" /></div>}
                   </div>
                   <div className="flex-1 py-0 min-w-0">
@@ -2006,6 +2148,97 @@ function PosApp({ user, onLogout }) {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Table Order History Modal */}
+      {tableHistory && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => { setTableHistory(null); setTableHistoryDetail(null); }}>
+          <div className="bg-white rounded-3xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b bg-gray-50 flex justify-between items-center flex-shrink-0">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Lịch sử — {tableHistory.tableName}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{tableHistory.orders.length} đơn gần nhất</p>
+              </div>
+              <button onClick={() => { setTableHistory(null); setTableHistoryDetail(null); }}
+                className="p-2 hover:bg-gray-200 rounded-full transition text-2xl">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {tableHistoryLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                </div>
+              ) : tableHistory.orders.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <Icon name="clock" className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                  Chưa có đơn đã thanh toán
+                </div>
+              ) : tableHistoryDetail ? (
+                /* Chi tiết đơn */
+                <div className="p-5 space-y-3">
+                  <button onClick={() => setTableHistoryDetail(null)}
+                    className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-semibold mb-2">
+                    <Icon name="arrow-left" className="w-4 h-4" /> Quay lại danh sách
+                  </button>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-black text-lg">Đơn #{tableHistoryDetail.id}</div>
+                      <div className="text-xs text-gray-400">
+                        {tableHistoryDetail.table_position && `Vị trí ${tableHistoryDetail.table_position} • `}
+                        {tableHistoryDetail.created_at ? new Date(tableHistoryDetail.created_at).toLocaleString("vi-VN") : ""}
+                      </div>
+                    </div>
+                    <span className="text-xl font-black text-primary-600">{Number(tableHistoryDetail.total_amount).toLocaleString()}đ</span>
+                  </div>
+                  <div className="border-t pt-3 space-y-2">
+                    {(tableHistoryDetail.items || []).map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-start py-2 border-b border-gray-50 last:border-0 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <span className="w-6 h-6 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] font-black text-gray-500 flex-shrink-0">{item.quantity}x</span>
+                            <span className="font-bold text-gray-800 text-sm truncate">{item.name}</span>
+                            {item.size_name && <span className="text-xs text-gray-400">({item.size_name})</span>}
+                          </div>
+                          {item.toppings?.length > 0 && (
+                            <p className="text-[10px] text-primary-500 font-bold italic ml-8 mt-0.5 truncate">+{item.toppings.join(", ")}</p>
+                          )}
+                        </div>
+                        <span className="font-bold text-gray-700 text-sm flex-shrink-0">{(item.price * item.quantity).toLocaleString()}đ</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Danh sách đơn */
+                <div className="p-3 space-y-2">
+                  {tableHistory.orders.map((o) => {
+                    const timeStr = o.created_at ? new Date(o.created_at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "";
+                    const itemCount = (o.items || []).reduce((s, it) => s + it.quantity, 0);
+                    return (
+                      <button key={o.id} onClick={() => setTableHistoryDetail(o)}
+                        className="w-full bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50 rounded-xl p-3 flex items-center justify-between transition text-left">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                            <span className="text-xs font-black text-gray-500">#{o.id}</span>
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-gray-800">
+                              {o.table_position ? `Vị trí ${o.table_position}` : o.table_name || "Mang về"}
+                            </div>
+                            <div className="text-xs text-gray-400">{timeStr} • {itemCount} món</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-700 text-sm">{Number(o.total_amount).toLocaleString()}đ</span>
+                          <Icon name="chevron-right" className="w-4 h-4 text-gray-300" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2253,7 +2486,7 @@ function WelcomeOverlay({ onDismiss, storeName, featuredProducts, step, facebook
                 <div key={i} className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden w-36 shadow-xl">
                   <div className="aspect-square bg-white/5 flex items-center justify-center">
                     {p.image_url
-                      ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                      ? <OptimizedImg src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
                       : <div className="text-white/40"><Icon name="utensils" className="w-8 h-8" /></div>}
                   </div>
                   <div className="p-3 text-center">
@@ -3039,7 +3272,7 @@ function PublicMenuView({ tableId, onLogout }) {
                       className="bg-white rounded-lg shadow-sm overflow-hidden cursor-pointer active:scale-95 transition-transform">
                       <div className="relative w-full bg-gray-50" style={{paddingBottom: "100%"}}>
                         {p.image_url ? (
-                          <img src={p.image_url} alt={p.name} loading="lazy" decoding="async"
+                          <OptimizedImg src={p.image_url} alt={p.name} width="200" height="200"
                             className="absolute inset-0 w-full h-full object-cover" />
                         ) : (
                           <div className="absolute inset-0 w-full h-full bg-gray-100 flex items-center justify-center">
@@ -3111,8 +3344,14 @@ function PublicMenuView({ tableId, onLogout }) {
 const KITCHEN_POLL_INTERVAL_MS = 2000; // 2s polling (Workers don't support SSE)
 
 function KitchenView({ unit, onLogout, fill = "screen" }) {
-  const [orders, setOrders] = useState([]);
-  const [cancelledItems, setCancelledItems] = useState({});
+  // Sync context: use shared data when embedded in PosApp
+  const syncCtx = useContext(SyncContext);
+  const isEmbedded = !!syncCtx;
+  const contextOrders = isEmbedded ? (unit === "kitchen" ? syncCtx.kitchenOrders : syncCtx.counterOrders) : null;
+  const contextCancelled = isEmbedded ? (unit === "kitchen" ? syncCtx.kitchenCancelled : syncCtx.counterCancelled) : null;
+
+  const [localOrders, setLocalOrders] = useState([]);
+  const [localCancelledItems, setLocalCancelledItems] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("pending");
@@ -3123,6 +3362,34 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   const previousOrderIdsRef = useRef(new Set());
   // Theo dõi optimistic status: itemId → {status, qty} — ngăn poll ghi đè
   const pendingStatusRef = useRef(new Map());
+  const mutationCounter = useRef(0);
+
+  // Derived: merge context data with pending optimistic overrides (embedded mode)
+  const orders = useMemo(() => {
+    const source = isEmbedded ? contextOrders : localOrders;
+    if (!source) return [];
+    const pending = pendingStatusRef.current;
+    if (pending.size === 0) return source;
+    return source.map((order) => ({
+      ...order,
+      items: order.items.map((it) => {
+        const p = pending.get(it.id);
+        if (!p) return it;
+        if (p.deleted) return null;
+        return { ...it, status: p.status ?? it.status, quantity: p.qty ?? it.quantity };
+      }).filter(Boolean),
+    }));
+  }, [contextOrders, localOrders, isEmbedded, mutationCounter.current]);
+
+  const cancelledItems = isEmbedded ? (contextCancelled || localCancelledItems) : localCancelledItems;
+
+  // In embedded mode, loading is driven by context availability
+  const effectiveLoading = isEmbedded ? !contextOrders : loading;
+
+  // Embedded mode: mark as loaded once context delivers first data
+  useEffect(() => {
+    if (isEmbedded && contextOrders && loading) setLoading(false);
+  }, [isEmbedded, contextOrders, loading]);
 
   const isKitchen = unit === "kitchen";
   const token = localStorage.getItem(TOKEN_KEY);
@@ -3172,6 +3439,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   }, [soundEnabled]);
 
   const fetchOrders = useCallback(async () => {
+    if (isEmbedded) return; // Data comes from SyncContext
     try {
       const [ordersResp, eventsResp] = await Promise.all([
         authFetch(`/api/orders/kitchen?unit=${unit}`),
@@ -3196,7 +3464,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       // Áp dụng pending optimistic status — giữ status mới cho item đang có API call
       const pending = pendingStatusRef.current;
       if (pending.size > 0) {
-        setOrders(newOrders.map((order) => ({
+        setLocalOrders(newOrders.map((order) => ({
           ...order,
           items: order.items.map((it) => {
             const p = pending.get(it.id);
@@ -3206,7 +3474,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
           }).filter(Boolean),
         })));
       } else {
-        setOrders(newOrders);
+        setLocalOrders(newOrders);
       }
 
       // Build cancelled items map
@@ -3224,7 +3492,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
           created_at: ev.created_at,
         };
       }
-      setCancelledItems(cancelledMap);
+      setLocalCancelledItems(cancelledMap);
       setError(null);
     } catch (err) {
       console.error("Kitchen fetch error:", err);
@@ -3232,11 +3500,12 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     } finally {
       setLoading(false);
     }
-  }, [authFetch, unit, playAlertSound]);
+  }, [authFetch, unit, playAlertSound, isEmbedded]);
 
   // Change-detection polling: check lightweight key first, fetch full only when changed
   const lastKitchenKeyRef = useRef("");
   useEffect(() => {
+    if (isEmbedded) return; // SyncProvider handles polling
     const poll = async () => {
       try {
         const resp = await authFetch(`/api/changes?ctx=kitchen&unit=${unit}`);
@@ -3251,20 +3520,22 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     poll();
     const interval = setInterval(poll, KITCHEN_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchOrders, authFetch, unit]);
+  }, [fetchOrders, authFetch, unit, isEmbedded]);
 
   const updateItemStatus = async (itemId, status) => {
     const key = `${itemId}:status`;
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
-    // Ghi pending: poll sẽ giữ status này cho đến khi API hoàn tất
     pendingStatusRef.current.set(itemId, { status });
-    setOrders((prev) =>
-      prev.map((order) => ({
-        ...order,
-        items: order.items.map((it) => (it.id === itemId ? { ...it, status } : it)),
-      }))
-    );
+    mutationCounter.current++;
+    if (!isEmbedded) {
+      setLocalOrders((prev) =>
+        prev.map((order) => ({
+          ...order,
+          items: order.items.map((it) => (it.id === itemId ? { ...it, status } : it)),
+        }))
+      );
+    }
     try {
       await authFetch(`/api/admin/order-items/${itemId}/status`, {
         method: "PUT",
@@ -3272,7 +3543,6 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       });
     } catch (err) {
       console.error("Status update error:", err);
-      fetchOrders();
     } finally {
       pendingStatusRef.current.delete(itemId);
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
@@ -3290,14 +3560,17 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     } else {
       pendingStatusRef.current.set(item.id, { qty: newQty });
     }
-    setOrders((prev) =>
-      prev.map((order) => ({
-        ...order,
-        items: newQty <= 0
-          ? order.items.filter((it) => it.id !== item.id)
-          : order.items.map((it) => (it.id === item.id ? { ...it, quantity: newQty } : it)),
-      }))
-    );
+    mutationCounter.current++;
+    if (!isEmbedded) {
+      setLocalOrders((prev) =>
+        prev.map((order) => ({
+          ...order,
+          items: newQty <= 0
+            ? order.items.filter((it) => it.id !== item.id)
+            : order.items.map((it) => (it.id === item.id ? { ...it, quantity: newQty } : it)),
+        }))
+      );
+    }
     try {
       if (item.quantity <= 1) {
         await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, { method: "DELETE" });
@@ -3309,7 +3582,6 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
       }
     } catch (err) {
       console.error("Reduce error:", err);
-      fetchOrders();
     } finally {
       pendingStatusRef.current.delete(item.id);
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
@@ -3322,17 +3594,19 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
     pendingStatusRef.current.set(item.id, { deleted: true });
-    setOrders((prev) =>
-      prev.map((order) => ({
-        ...order,
-        items: order.items.filter((it) => it.id !== item.id),
-      }))
-    );
+    mutationCounter.current++;
+    if (!isEmbedded) {
+      setLocalOrders((prev) =>
+        prev.map((order) => ({
+          ...order,
+          items: order.items.filter((it) => it.id !== item.id),
+        }))
+      );
+    }
     try {
       await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, { method: "DELETE" });
     } catch (err) {
       console.error("Cancel error:", err);
-      fetchOrders();
     } finally {
       pendingStatusRef.current.delete(item.id);
       setItemActionLoading((prev) => ({ ...prev, [key]: false }));
@@ -3343,7 +3617,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   const [persistedDismissed, setPersistedDismissed] = useState(() => loadDismissed());
 
   const dismissCancelled = (itemId) => {
-    setCancelledItems((prev) => {
+    setLocalCancelledItems((prev) => {
       const next = { ...prev };
       delete next[itemId];
       return next;
@@ -3431,7 +3705,7 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     return `${Math.floor(diff / 60)}h${diff % 60}p`;
   };
 
-  if (loading) {
+  if (effectiveLoading) {
     return (
       <div className="h-screen bg-gray-900 text-white flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -3734,7 +4008,7 @@ function KitchenItemCard({ item, onAction, actionLabel, actionClass, timeDiff, o
 
 const TAKEAWAY_CLIENT_KEY = "takeaway_client_id";
 const TAKEAWAY_NAME_KEY = "takeaway_customer_name";
-const TAKEAWAY_POLL_MS = 10000;
+const TAKEAWAY_POLL_MS = 3000;
 
 function TakeawayMenuView() {
   const [storeName, setStoreName] = useState("Đang tải...");
@@ -3814,7 +4088,7 @@ function TakeawayMenuView() {
     })();
   }, [clientId]);
 
-  // Poll items when in myorder view
+  // Poll items when in myorder view — fetch immediately on switch
   useEffect(() => {
     if (activeView !== "myorder" || !clientId) return;
     let cancelled = false;
@@ -3828,7 +4102,7 @@ function TakeawayMenuView() {
       } catch (err) { /* ignore */ }
       finally { if (!cancelled) setItemsLoading(false); }
     };
-    poll();
+    poll(); // immediate on first render
     const interval = setInterval(poll, TAKEAWAY_POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeView, clientId]);
@@ -3923,12 +4197,11 @@ function TakeawayMenuView() {
         setIsOrdering(false);
         return;
       }
-      setOrderSuccess(true);
-      setIsOrdering(false);
-      setTimeout(() => {
-        setCart([]); setOrderSuccess(false);
-        setShowCartModal(false); setActiveView("myorder");
-      }, 2000);
+      // Success: clear cart and switch to myorder immediately
+      setCart([]); setOrderSuccess(true); setIsOrdering(false);
+      setShowCartModal(false); setActiveView("myorder");
+      // Clear success badge after 2s
+      setTimeout(() => setOrderSuccess(false), 2000);
     } catch (err) {
       setIsOrdering(false);
       addToast("Mạng không ổn định, vui lòng thử lại.");
@@ -4154,7 +4427,7 @@ function TakeawayMenuView() {
                 className="bg-white rounded-lg shadow-sm overflow-hidden cursor-pointer active:scale-95 transition-transform">
                 <div className="relative w-full pb-[100%] bg-gray-50">
                   {product.image_url ? (
-                    <img src={product.image_url} alt={product.name} loading="lazy" decoding="async"
+                    <OptimizedImg src={product.image_url} alt={product.name}
                       className="absolute inset-0 w-full h-full object-cover" />
                   ) : (
                     <div className="absolute inset-0 w-full h-full bg-gray-100 flex items-center justify-center">
@@ -4328,7 +4601,8 @@ const SHIP_PHONE_KEY = "ship_customer_phone";
 const SHIP_ADDRESS_KEY = "ship_address";
 const SHIP_LAT_KEY = "ship_latitude";
 const SHIP_LNG_KEY = "ship_longitude";
-const SHIP_POLL_MS = 10000;
+const SHIP_POLL_MS = 3000;
+const SHIP_POLL_INITIAL_DELAY = 0;
 
 function ShipMenuView() {
   const [storeName, setStoreName] = useState("Đang tải...");
@@ -4863,7 +5137,7 @@ function ShipMenuView() {
                   className="bg-white border border-gray-200 rounded-md overflow-hidden cursor-pointer active:scale-95 transition-transform hover:border-gray-400">
                   <div className="relative w-full pb-[100%] bg-gray-50">
                     {product.image_url ? (
-                      <img src={product.image_url} alt={product.name} loading="lazy" decoding="async"
+                      <OptimizedImg src={product.image_url} alt={product.name}
                         className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 w-full h-full bg-gray-100"></div>
@@ -6342,7 +6616,7 @@ function AdminPanel({ embedded = false, onExit }) {
                         <div className="flex items-center space-x-2 md:space-x-4">
                           <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-white border border-gray-100 overflow-hidden shadow-inner flex-shrink-0 flex items-center justify-center">
                             {p.image_url
-                              ? <img src={p.image_url} className="w-full h-full object-cover" alt={p.name} loading="lazy" />
+                              ? <OptimizedImg src={p.image_url} className="w-full h-full object-cover" alt={p.name} />
                               : <span className="text-gray-300"><Icon name="utensils" className="w-5 h-5" /></span>}
                           </div>
                           <div className="flex flex-col min-w-0">
@@ -6723,7 +6997,7 @@ function AdminPanel({ embedded = false, onExit }) {
                 <div className="h-40 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 overflow-hidden relative group flex items-center justify-center cursor-pointer hover:border-primary-400 transition-all">
                   {productForm.image_url ? (
                     <>
-                      <img src={productForm.image_url} className="w-full h-full object-cover" alt="preview" />
+                      <OptimizedImg src={productForm.image_url} className="w-full h-full object-cover" alt="preview" />
                       <label className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-sm font-bold">
                         <Icon name="upload" className="w-6 h-6 mb-1" />
                         Đổi ảnh
@@ -7195,7 +7469,7 @@ function App() {
   }
 
   if (!user) return <LoginView onLogin={setUser} />;
-  return <PosApp user={user} onLogout={handleLogout} />;
+  return <SyncProvider><PosApp user={user} onLogout={handleLogout} /></SyncProvider>;
 }
 
 // ============ Mount ============

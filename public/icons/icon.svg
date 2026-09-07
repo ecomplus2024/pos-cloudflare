@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="108" fill="url(#shine)"/>
+  <!-- Subtle grid pattern -->
+  <g opacity="0.06">
+    <line x1="128" y1="0" x2="128" y2="512" stroke="#fff" stroke-width="1.5"/>
+    <line x1="256" y1="0" x2="256" y2="512" stroke="#fff" stroke-width="1.5"/>
+    <line x1="384" y1="0" x2="384" y2="512" stroke="#fff" stroke-width="1.5"/>
+    <line x1="0" y1="128" x2="512" y2="128" stroke="#fff" stroke-width="1.5"/>
+    <line x1="0" y1="256" x2="512" y2="256" stroke="#fff" stroke-width="1.5"/>
+    <line x1="0" y1="384" x2="512" y2="384" stroke="#fff" stroke-width="1.5"/>
+  </g>
+  <!-- Shopping cart icon -->
+  <g filter="url(#shadow)" transform="translate(256,240)">
+    <!-- Cart body -->
+    <path d="M-80,-60 L-60,-60 L-30,40 L80,40 L95,-20 L-15,-20" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Wheels -->
+    <circle cx="-10" cy="70" r="14" fill="#fff"/>
+    <circle cx="60" cy="70" r="14" fill="#fff"/>
+    <!-- Items in cart -->
+    <rect x="-50" y="-45" width="28" height="28" rx="6" fill="#fbbf24"/>
+    <rect x="-10" y="-45" width="28" height="28" rx="6" fill="#34d399"/>
+    <rect x="30" y="-45" width="28" height="28" rx="6" fill="#f87171"/>
+  </g>
+  <!-- "POS" text -->
+  <text x="256" y="420" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="72" fill="#fff" letter-spacing="12">POS</text>
+</svg>
