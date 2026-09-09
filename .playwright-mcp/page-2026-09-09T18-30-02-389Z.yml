@@ -1,0 +1,76 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - button "POS" [ref=f1e5] [cursor=pointer]
+    - generic [ref=f1e11]:
+      - button "Bếp" [ref=f1e12] [cursor=pointer]
+      - button "Pha chế" [ref=f1e15] [cursor=pointer]
+    - button "Cài đặt" [ref=f1e20] [cursor=pointer]
+  - generic [ref=f1e26]:
+    - generic [ref=f1e27]:
+      - button "Sơ đồ bàn" [ref=f1e28] [cursor=pointer]
+      - button "Mang về" [ref=f1e34] [cursor=pointer]
+      - button "Ship" [ref=f1e38] [cursor=pointer]
+    - generic [ref=f1e44]:
+      - button "ORDER NHANH MANG VỀ / TẠI QUẦY" [ref=f1e45] [cursor=pointer]:
+        - generic [ref=f1e47]: ORDER NHANH
+        - generic [ref=f1e54]: MANG VỀ / TẠI QUẦY
+      - button "Bàn 1 Bàn trống" [ref=f1e55] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e57]
+        - generic [ref=f1e61]: Bàn 1
+        - generic [ref=f1e62]: Bàn trống
+      - button "Bàn 2 Bàn trống" [ref=f1e63] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e65]
+        - generic [ref=f1e69]: Bàn 2
+        - generic [ref=f1e70]: Bàn trống
+      - button "Bàn 3 Bàn trống" [ref=f1e71] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e73]
+        - generic [ref=f1e77]: Bàn 3
+        - generic [ref=f1e78]: Bàn trống
+      - button "Bàn 4 Bàn trống" [ref=f1e79] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e81]
+        - generic [ref=f1e85]: Bàn 4
+        - generic [ref=f1e86]: Bàn trống
+      - button "Bàn 5 Bàn trống" [ref=f1e87] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e89]
+        - generic [ref=f1e93]: Bàn 5
+        - generic [ref=f1e94]: Bàn trống
+      - button "Bàn 6 Bàn trống" [ref=f1e95] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e97]
+        - generic [ref=f1e101]: Bàn 6
+        - generic [ref=f1e102]: Bàn trống
+      - button "Bàn 7 Bàn trống" [ref=f1e103] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e105]
+        - generic [ref=f1e109]: Bàn 7
+        - generic [ref=f1e110]: Bàn trống
+      - button "Bàn 8 Bàn trống" [ref=f1e111] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e113]
+        - generic [ref=f1e117]: Bàn 8
+        - generic [ref=f1e118]: Bàn trống
+      - button "Bàn 9 Bàn trống" [ref=f1e119] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e121]
+        - generic [ref=f1e125]: Bàn 9
+        - generic [ref=f1e126]: Bàn trống
+      - button "Bàn 10 Bàn trống" [ref=f1e127] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e129]
+        - generic [ref=f1e133]: Bàn 10
+        - generic [ref=f1e134]: Bàn trống
+      - button "Bàn 11 Bàn trống" [ref=f1e135] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e137]
+        - generic [ref=f1e141]: Bàn 11
+        - generic [ref=f1e142]: Bàn trống
+      - button "Bàn 12 Bàn trống" [ref=f1e143] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e145]
+        - generic [ref=f1e149]: Bàn 12
+        - generic [ref=f1e150]: Bàn trống
+      - button "Bàn 13 Bàn trống" [ref=f1e151] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e153]
+        - generic [ref=f1e157]: Bàn 13
+        - generic [ref=f1e158]: Bàn trống
+      - button "Bàn 14 Bàn trống" [ref=f1e159] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e161]
+        - generic [ref=f1e165]: Bàn 14
+        - generic [ref=f1e166]: Bàn trống
+      - button "Bàn 15 Bàn trống" [ref=f1e167] [cursor=pointer]:
+        - generic "Lịch sử đơn hàng" [ref=f1e169]
+        - generic [ref=f1e173]: Bàn 15
+        - generic [ref=f1e174]: Bàn trống

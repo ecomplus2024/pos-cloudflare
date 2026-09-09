@@ -1,0 +1,64 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - button "POS" [ref=f5e5] [cursor=pointer]
+    - generic [ref=f5e11]:
+      - button "Bếp" [ref=f5e12] [cursor=pointer]
+      - button "Pha chế" [ref=f5e15] [cursor=pointer]
+    - button "Cài đặt" [ref=f5e20] [cursor=pointer]
+  - generic [ref=f5e26]:
+    - banner [ref=f5e27]:
+      - generic [ref=f5e28]: Bếp
+      - generic [ref=f5e33]:
+        - button [ref=f5e34] [cursor=pointer]
+        - button [ref=f5e39] [cursor=pointer]
+    - generic [ref=f5e43]:
+      - generic [ref=f5e45]:
+        - heading "ĐƠN MỚI" [level=3] [ref=f5e46]
+        - generic [ref=f5e50]: "0"
+      - generic [ref=f5e56]:
+        - generic [ref=f5e57]:
+          - heading "ĐANG LÀM" [level=3] [ref=f5e58]
+          - generic [ref=f5e61]: "3"
+        - generic [ref=f5e62]:
+          - generic [ref=f5e64]:
+            - generic [ref=f5e65]:
+              - generic [ref=f5e66]:
+                - heading "Bàn 1" [level=3] [ref=f5e67]
+                - generic [ref=f5e68]:
+                  - button "Giảm 1" [ref=f5e69] [cursor=pointer]
+                  - button "Hủy món" [ref=f5e71] [cursor=pointer]
+                - generic [ref=f5e75]: 8 phút
+              - generic [ref=f5e76]:
+                - paragraph [ref=f5e77]: Bánh mỳ muối ớt
+                - generic [ref=f5e78]:
+                  - generic [ref=f5e79]: x
+                  - generic [ref=f5e80]: "2"
+            - button "Trả món" [ref=f5e83] [cursor=pointer]
+          - generic [ref=f5e85]:
+            - generic [ref=f5e86]:
+              - generic [ref=f5e87]:
+                - heading "Bàn 1" [level=3] [ref=f5e88]
+                - generic [ref=f5e89]:
+                  - button "Giảm 1" [ref=f5e90] [cursor=pointer]
+                  - button "Hủy món" [ref=f5e92] [cursor=pointer]
+                - generic [ref=f5e96]: 8 phút
+              - generic [ref=f5e97]:
+                - paragraph [ref=f5e98]: Bánh mì chảo
+                - generic [ref=f5e99]:
+                  - generic [ref=f5e100]: x
+                  - generic [ref=f5e101]: "1"
+            - button "Trả món" [ref=f5e102] [cursor=pointer]
+          - generic [ref=f5e104]:
+            - generic [ref=f5e105]:
+              - generic [ref=f5e106]:
+                - heading "Bàn 1" [level=3] [ref=f5e107]
+                - generic [ref=f5e108]:
+                  - button "Giảm 1" [ref=f5e109] [cursor=pointer]
+                  - button "Hủy món" [ref=f5e111] [cursor=pointer]
+                - generic [ref=f5e115]: 8 phút
+              - generic [ref=f5e116]:
+                - paragraph [ref=f5e117]: Chân gà sốt thái
+                - generic [ref=f5e118]:
+                  - generic [ref=f5e119]: x
+                  - generic [ref=f5e120]: "1"
+            - button "Trả món" [ref=f5e121] [cursor=pointer]
