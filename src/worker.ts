@@ -813,6 +813,31 @@ async function handleUpdateItemStatus(env, itemId, newStatus) {
   await env.DB.prepare(`UPDATE order_items SET status = ? WHERE id = ?`).bind(newStatus, itemId).run();
   return json({ message: "Status updated" });
 }
+
+async function handleKitchenBatchSync(env, changes) {
+  // Phase 5b offline sync: batch update nhiều item status
+  // Non-completed (pending/processing): kitchen staff là authority — luôn áp dụng
+  // Completed: last-write-wins
+  if (!Array.isArray(changes)) return json({ message: "changes must be an array" }, 400);
+  const results = [];
+  for (const change of changes) {
+    const { itemId, status } = change;
+    if (!itemId || !status) { results.push({ itemId, success: false, error: "missing fields" }); continue; }
+    if (!["pending", "processing", "completed"].includes(status)) {
+      results.push({ itemId, success: false, error: "invalid status" }); continue;
+    }
+    try {
+      const item = await env.DB.prepare("SELECT id FROM order_items WHERE id = ?").bind(itemId).first();
+      if (!item) { results.push({ itemId, success: false, error: "not_found" }); continue; }
+      // Kitchen rule: non-completed luôn apply (staff là authority)
+      await env.DB.prepare("UPDATE order_items SET status = ? WHERE id = ?").bind(status, itemId).run();
+      results.push({ itemId, success: true, applied: true });
+    } catch (err) {
+      results.push({ itemId, success: false, error: String(err) });
+    }
+  }
+  return json({ results });
+}
 async function handlePublicMenu(env, tableId) {
   const tableRow = await env.DB.prepare("SELECT id, name FROM tables WHERE id = ?").bind(tableId).first();
   if (!tableRow) return json({ message: "B\xE0n kh\xF4ng t\u1ED3n t\u1EA1i" }, 404);
@@ -2856,6 +2881,17 @@ var worker_default = {
       try {
         const body = await request.json();
         return await handleUpdateItemStatus(env, parseInt(itemStatusMatch[1], 10), body.status ?? "");
+      } catch (err) {
+        return json({ error: String(err) }, 500);
+      }
+    }
+    // Phase 5b: batch kitchen sync endpoint
+    if (url.pathname === "/api/sync/kitchen-batch" && request.method === "POST") {
+      const auth = await requireAuth(env, request);
+      if (!auth.valid) return auth.error;
+      try {
+        const body = await request.json();
+        return await handleKitchenBatchSync(env, body.changes || []);
       } catch (err) {
         return json({ error: String(err) }, 500);
       }

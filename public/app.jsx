@@ -127,8 +127,12 @@ function Icon({ name, className = "", strokeWidth = 2 }) {
 
 // ============ Offline Queue (IndexedDB) ============
 const DB_NAME = 'pos-offline-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'offline_orders';
+const MENU_STORE = 'menu_cache';
+const KITCHEN_STORE = 'kitchen_status';
+const KITCHEN_COMPLETED_STORE = 'kitchen_completed';
+const SETTINGS_STORE = 'settings_cache';
 
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
@@ -141,6 +145,22 @@ function openOfflineDB() {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
         store.createIndex('by-status', 'status', { unique: false });
         store.createIndex('by-created', 'created_at', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(MENU_STORE)) {
+        db.createObjectStore(MENU_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(KITCHEN_STORE)) {
+        const ks = db.createObjectStore(KITCHEN_STORE, { keyPath: 'itemId' });
+        ks.createIndex('by-synced', 'synced', { unique: false });
+        ks.createIndex('by-updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(KITCHEN_COMPLETED_STORE)) {
+        const cs = db.createObjectStore(KITCHEN_COMPLETED_STORE, { keyPath: 'itemId' });
+        cs.createIndex('by-orderId', 'orderId', { unique: false });
+        cs.createIndex('by-completedAt', 'completedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
+        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
       }
     };
   });
@@ -251,6 +271,202 @@ async function flushOfflineQueue(onProgress) {
   return { synced, failed };
 }
 
+// ============ Menu Cache Helpers ============
+async function saveMenuToCache(menu) {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MENU_STORE, 'readwrite');
+      tx.objectStore(MENU_STORE).put({ key: 'menu', data: menu, cachedAt: Date.now() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+async function getMenuFromCache() {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MENU_STORE, 'readonly');
+      const req = tx.objectStore(MENU_STORE).get('menu');
+      req.onsuccess = () => resolve(req.result?.data || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return null; }
+}
+
+async function clearOldMenuCache(maxAgeMs) {
+  try {
+    const db = await openOfflineDB();
+    const cutoff = Date.now() - maxAgeMs;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MENU_STORE, 'readwrite');
+      const store = tx.objectStore(MENU_STORE);
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cur = e.target.result;
+        if (cur) { if (cur.value.cachedAt < cutoff) cur.delete(); else cur.continue(); }
+        else resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {}
+}
+
+// ============ Kitchen Status Helpers ============
+async function saveKitchenItemStatus(itemId, status, updatedAt = Date.now()) {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_STORE, 'readwrite');
+      tx.objectStore(KITCHEN_STORE).put({ itemId, status, updatedAt, synced: false });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+async function getAllKitchenStatus() {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_STORE, 'readonly');
+      const req = tx.objectStore(KITCHEN_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+
+async function getPendingKitchenSync() {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_STORE, 'readonly');
+      const store = tx.objectStore(KITCHEN_STORE);
+      const req = store.index('by-synced').getAll(IDBKeyRange.only(false));
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+
+async function markKitchenItemsSynced(itemIds) {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_STORE, 'readwrite');
+      const store = tx.objectStore(KITCHEN_STORE);
+      let remaining = itemIds.length;
+      if (remaining === 0) { resolve(); return; }
+      for (const id of itemIds) {
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+          if (getReq.result) { const r = getReq.result; r.synced = true; store.put(r); }
+          remaining--;
+          if (remaining === 0) { tx.oncomplete = () => resolve(); }
+        };
+      }
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+async function clearKitchenBeforeDate(dateStr) {
+  // dateStr: "YYYY-MM-DD" — xóa non-completed record cũ hơn ngày này
+  try {
+    const cutoff = new Date(dateStr + 'T00:00:00').getTime();
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_STORE, 'readwrite');
+      const store = tx.objectStore(KITCHEN_STORE);
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cur = e.target.result;
+        if (cur) {
+          if (cur.value.updatedAt < cutoff && cur.value.status !== 'completed') cur.delete();
+          cur.continue();
+        } else resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {}
+}
+
+// ============ Kitchen Completed Helpers ============
+async function saveCompletedItem(orderId, itemId, productName, completedAt = Date.now()) {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_COMPLETED_STORE, 'readwrite');
+      tx.objectStore(KITCHEN_COMPLETED_STORE).put({ itemId, orderId, productName, completedAt, synced: false });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+async function getCompletedItems() {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_COMPLETED_STORE, 'readonly');
+      const req = tx.objectStore(KITCHEN_COMPLETED_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+
+async function clearCompletedBeforeDate(dateStr) {
+  try {
+    const cutoff = new Date(dateStr + 'T00:00:00').getTime();
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KITCHEN_COMPLETED_STORE, 'readwrite');
+      const store = tx.objectStore(KITCHEN_COMPLETED_STORE);
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cur = e.target.result;
+        if (cur) { if (cur.value.completedAt < cutoff) cur.delete(); cur.continue(); }
+        else resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {}
+}
+
+// ============ Settings Cache Helpers ============
+async function saveSettingsToCache(settings) {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+      const store = tx.objectStore(SETTINGS_STORE);
+      for (const [k, v] of Object.entries(settings)) store.put({ key: k, value: v });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+async function getSettingsFromCache() {
+  try {
+    const db = await openOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SETTINGS_STORE, 'readonly');
+      const req = tx.objectStore(SETTINGS_STORE).getAll();
+      req.onsuccess = () => {
+        const result = {};
+        for (const row of req.result) result[row.key] = row.value;
+        resolve(result);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return {}; }
+}
+
 // ============ Hooks ============
 
 function useOnlineStatus() {
@@ -326,6 +542,58 @@ function useOfflineQueue(isOnline) {
     syncNow,
     isOnline,
   };
+}
+
+// Phase 5a: kitchen sync hook
+function useKitchenSync(isOnline, authFetch, onSync) {
+  const [syncing, setSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const checkPending = useCallback(async () => {
+    try {
+      const pending = await getPendingKitchenSync();
+      setPendingCount(pending.length);
+    } catch {}
+  }, []);
+
+  useEffect(() => { checkPending(); }, [checkPending]);
+
+  // Poll pending count every 5s
+  useEffect(() => {
+    const interval = setInterval(checkPending, 5000);
+    return () => clearInterval(interval);
+  }, [checkPending]);
+
+  const syncPendingChanges = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const pending = await getPendingKitchenSync();
+      if (pending.length === 0) { setSyncing(false); return; }
+      const batch = pending
+        .filter((r) => r.status !== 'deleted')
+        .map((r) => ({ itemId: r.itemId, status: r.status === 'reduced' ? 'processing' : r.status, updatedAt: r.updatedAt }));
+      if (batch.length === 0) { setSyncing(false); return; }
+      const resp = await authFetch('/api/sync/kitchen-batch', {
+        method: 'POST',
+        body: JSON.stringify({ changes: batch }),
+      });
+      if (resp.ok) {
+        await markKitchenItemsSynced(pending.map((p) => p.itemId));
+        await checkPending();
+        if (onSync) onSync();
+      }
+    } catch {} finally {
+      setSyncing(false);
+    }
+  }, [syncing, authFetch, checkPending, onSync]);
+
+  // Auto-sync when coming online
+  useEffect(() => {
+    if (isOnline) syncPendingChanges();
+  }, [isOnline, syncPendingChanges]);
+
+  return { syncing, pendingCount, syncPendingChanges, checkPending };
 }
 
 function useInstallPrompt() {
@@ -798,6 +1066,9 @@ function SyncProvider({ children }) {
 function PosApp({ user, onLogout }) {
   // Global sync: consume shared data from SyncProvider
   const sync = useContext(SyncContext);
+  // Phase 3: offline order queue
+  const isOnline = useOnlineStatus();
+  const { pendingCount, addToQueue } = useOfflineQueue(isOnline);
   const { tables, setTables, orders, setOrders, staffCalls, setStaffCalls, serverOffsetMs,
           refreshTables, refreshOrders, newStaffCallsRef, newKitchenAlertRef, newCounterAlertRef } = sync;
 
@@ -874,23 +1145,46 @@ function PosApp({ user, onLogout }) {
   const prevKitchenCount = useRef(0);
   const prevCounterCount = useRef(0);
 
+  // Phase 2 offline: cache-first menu load
   useEffect(() => {
-    authFetch("/api/menu")
-      .then((menu) => {
-        setStoreName(menu.store_name || "POS Demo");
-        setCategories(menu.categories || []);
-        const prods = (menu.products || []).filter((p) => !p.is_topping);
-        const tops = (menu.products || []).filter((p) => p.is_topping);
+    const loadMenu = async () => {
+      // 1. Hiển thị cache trước (nếu có)
+      const cached = await getMenuFromCache();
+      if (cached) {
+        setStoreName(cached.store_name || "POS Demo");
+        const prods = (cached.products || []).filter((p) => !p.is_topping);
+        const tops = (cached.products || []).filter((p) => p.is_topping);
+        setCategories(cached.categories || []);
         setProducts(prods);
         setToppings(tops);
-      })
-      .catch(() => {
-        setStoreName(MOCK_MENU.store_name + " (preview)");
-        setCategories(MOCK_MENU.categories);
-        setProducts(MOCK_MENU.products);
-        setUsingMock(true);
-      });
-    // Tables are loaded by SyncProvider's initial poll — no need to fetch here
+      }
+      // 2. Luôn thử cập nhật từ server
+      try {
+        const menu = await authFetch("/api/menu");
+        setStoreName(menu.store_name || "POS Demo");
+        const prods = (menu.products || []).filter((p) => !p.is_topping);
+        const tops = (menu.products || []).filter((p) => p.is_topping);
+        setCategories(menu.categories || []);
+        setProducts(prods);
+        setToppings(tops);
+        setUsingMock(false);
+        // Lưu vào IndexedDB để dùng offline
+        await saveMenuToCache(menu);
+        if (menu.settings) await saveSettingsToCache(menu.settings);
+      } catch {
+        // Server không truy cập được — dùng cache hoặc mock
+        if (!cached) {
+          setStoreName(MOCK_MENU.store_name + " (preview)");
+          setCategories(MOCK_MENU.categories);
+          setProducts(MOCK_MENU.products);
+          setUsingMock(true);
+        } else {
+          setUsingMock(true);
+        }
+      }
+    };
+    loadMenu();
+    // Tables loaded by SyncProvider's initial poll — no need to fetch here
   }, []);
 
   const showToast = (msg) => {
@@ -1206,18 +1500,24 @@ function PosApp({ user, onLogout }) {
         payment_method: paymentMethod,
         items: newItems,
       };
-      // Snapshot baseline + gọi API
+      // Snapshot baseline
       setInitialCart(JSON.parse(JSON.stringify(cart)));
       setShowCheckout(false);
-      showToast("Đã gửi báo chế biến");
-      const data = await authFetch("/api/orders", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      setCurrentOrderId(data.order_id);
+      try {
+        const data = await authFetch("/api/orders", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setCurrentOrderId(data.order_id);
+        showToast("Đã gửi báo chế biến");
+        refreshTables();
+        refreshOrders();
+      } catch {
+        // Offline: lưu vào queue để sync sau
+        await addToQueue("/api/orders", "POST", payload, {});
+        showToast("Đã lưu offline — sẽ đồng bộ khi có mạng");
+      }
       setSubmitting(false);
-      refreshTables();
-      refreshOrders();
     } catch (err) {
       showToast("Lỗi gửi bếp: " + err.message);
       setSubmitting(false);
@@ -1466,6 +1766,16 @@ function PosApp({ user, onLogout }) {
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
+      {/* Phase 7: offline banner */}
+      {(!isOnline || pendingCount > 0) && (
+        <div className="w-full bg-yellow-500 text-yellow-900 text-center text-sm font-bold py-1 px-4 flex items-center justify-center gap-2 shrink-0">
+          <Icon name="wifi-off" className="w-4 h-4" />
+          {!isOnline ? "Offline — Hoạt động ngoại tuyến" : "Đang đồng bộ..."}
+          {pendingCount > 0 && (
+            <span className="bg-yellow-700 text-yellow-100 px-2 py-0.5 rounded-full text-xs">{pendingCount} đơn chờ</span>
+          )}
+        </div>
+      )}
       <aside className="hidden md:flex flex-col items-center py-6 bg-white border-r shadow-sm w-20">
         <button onClick={() => setView("tables")} title="POS"
           className={`w-12 h-12 rounded-xl flex items-center justify-center transition ${view === "tables" ? "bg-primary-600 text-white shadow-md" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}><Icon name="shopping-cart" className="w-5 h-5" /></button>
@@ -3433,20 +3743,57 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   const mutationCounter = useRef(0);
   // Stale period: ngăn poll fetchOrders trong 3s sau mutation
   const staleUntilRef = useRef(0);
+  // Phase 4b: trạng thái kitchen từ IndexedDB (local wins)
+  const persistedKitchenStatusRef = useRef(new Map());
+  // Phase 5a: online status
+  const isOnline = useOnlineStatus();
 
-  // Derived: merge context data with pending optimistic overrides (embedded mode)
+  // Phase 6: midnight cleanup — xóa dữ liệu kitchen cũ khi sang ngày mới
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const lastDate = localStorage.getItem('pos_last_midnight');
+    if (lastDate && lastDate !== today) {
+      // Xóa non-completed cũ hơn hôm nay
+      clearKitchenBeforeDate(today);
+      // Xóa completed cũ hơn 1 ngày
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      clearCompletedBeforeDate(yesterday);
+      // Xóa menu cache cũ hơn 7 ngày
+      clearOldMenuCache(7 * 86400000);
+    }
+    localStorage.setItem('pos_last_midnight', today);
+  }, []);
+
+  // Derived: merge server data with local IndexedDB (local wins) and pending in-flight
   const orders = useMemo(() => {
     const source = isEmbedded ? contextOrders : localOrders;
     if (!source) return [];
     const pending = pendingStatusRef.current;
-    if (pending.size === 0) return source;
+    const persisted = persistedKitchenStatusRef.current;
     return source.map((order) => ({
       ...order,
       items: order.items.map((it) => {
+        // Priority: pendingStatusRef (in-flight) > persisted IndexedDB (local) > server
         const p = pending.get(it.id);
-        if (!p) return it;
-        if (p.deleted) return null;
-        return { ...it, status: p.status ?? it.status, quantity: p.qty ?? it.quantity };
+        if (p) {
+          if (p.deleted) return null;
+          return { ...it, status: p.status ?? it.status, quantity: p.qty ?? it.quantity };
+        }
+        const local = persisted.get(it.id);
+        if (local) {
+          if (local.status === 'deleted') return null;
+          if (local.status === 'reduced') {
+            return { ...it, quantity: local.quantity ?? it.quantity };
+          }
+          // Local wins if: higher priority status (pending > processing > completed)
+          if (local.status && local.status !== it.status) {
+            const priority = { pending: 3, processing: 2, completed: 1 };
+            if (priority[local.status] > priority[it.status]) {
+              return { ...it, status: local.status };
+            }
+          }
+        }
+        return it;
       }).filter(Boolean),
     }));
   }, [contextOrders, localOrders, isEmbedded, mutationCounter.current]);
@@ -3460,6 +3807,21 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
   useEffect(() => {
     if (isEmbedded && contextOrders && loading) setLoading(false);
   }, [isEmbedded, contextOrders, loading]);
+
+  // Phase 4b: load persisted IndexedDB status on mount
+  useEffect(() => {
+    const loadPersisted = async () => {
+      const all = await getAllKitchenStatus();
+      const map = new Map();
+      for (const rec of all) map.set(rec.itemId, rec);
+      persistedKitchenStatusRef.current = map;
+      mutationCounter.current++;
+    };
+    loadPersisted();
+  }, []);
+
+  // Phase 5a: kitchen sync — auto-sync when coming online
+  const kitchenSync = useKitchenSync(isOnline, authFetch, () => mutationCounter.current++);
 
   const isKitchen = unit === "kitchen";
   const token = localStorage.getItem(TOKEN_KEY);
@@ -3605,10 +3967,19 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     const key = `${itemId}:status`;
     if (itemActionLoading[key]) return;
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
+    // Phase 4a: ghi IndexedDB TRƯỚC khi gọi API (synced=false)
+    const now = Date.now();
+    await saveKitchenItemStatus(itemId, status, now);
+    if (status === 'completed') {
+      // Lưu completed item để đối chuyến
+      const item = (isEmbedded ? contextOrders : localOrders)
+        ?.flatMap((o) => o.items).find((it) => it.id === itemId);
+      if (item) await saveCompletedItem(item.order_id, itemId, item.product_name, now);
+    }
     pendingStatusRef.current.set(itemId, { status });
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 5000;
-    syncStaleUntilRef.current = Date.now() + 5000;
+    staleUntilRef.current = now + 5000;
+    syncStaleUntilRef.current = now + 5000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3622,11 +3993,11 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
         method: "PUT",
         body: JSON.stringify({ status }),
       });
+      // Đánh dấu đã sync
+      await markKitchenItemsSynced([itemId]);
     } catch (err) {
       console.error("Status update error:", err);
-      // Rollback on error
-      pendingStatusRef.current.delete(itemId);
-      fetchOrders();
+      // Phase 4a: KHÔNG rollback — giữ optimistic update + IndexedDB record
     }
     setItemActionLoading((prev) => ({ ...prev, [key]: false }));
   };
@@ -3636,15 +4007,18 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     const key = `${item.id}:reduce`;
     if (itemActionLoading[key]) return;
     const newQty = item.quantity - 1;
+    const now = Date.now();
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
+    // Phase 4a: ghi IndexedDB TRƯỚC khi gọi API
+    await saveKitchenItemStatus(item.id, newQty <= 0 ? 'deleted' : 'reduced', now);
     if (newQty <= 0) {
       pendingStatusRef.current.set(item.id, { deleted: true });
     } else {
       pendingStatusRef.current.set(item.id, { qty: newQty });
     }
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 5000;
-    syncStaleUntilRef.current = Date.now() + 5000;
+    staleUntilRef.current = now + 5000;
+    syncStaleUntilRef.current = now + 5000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3664,11 +4038,10 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
           body: JSON.stringify({ quantity: newQty }),
         });
       }
+      await markKitchenItemsSynced([item.id]);
     } catch (err) {
       console.error("Reduce error:", err);
-      // Rollback on error
-      pendingStatusRef.current.delete(item.id);
-      fetchOrders();
+      // Phase 4a: KHÔNG rollback — giữ optimistic update
     }
     setItemActionLoading((prev) => ({ ...prev, [key]: false }));
   };
@@ -3677,11 +4050,14 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     if (!item?.order_id || !item?.id || item.status === "completed") return;
     const key = `${item.id}:cancel`;
     if (itemActionLoading[key]) return;
+    const now = Date.now();
     setItemActionLoading((prev) => ({ ...prev, [key]: true }));
+    // Phase 4a: ghi IndexedDB TRƯỚC khi gọi API
+    await saveKitchenItemStatus(item.id, 'deleted', now);
     pendingStatusRef.current.set(item.id, { deleted: true });
     mutationCounter.current++;
-    staleUntilRef.current = Date.now() + 5000;
-    syncStaleUntilRef.current = Date.now() + 5000;
+    staleUntilRef.current = now + 5000;
+    syncStaleUntilRef.current = now + 5000;
     if (!isEmbedded) {
       setLocalOrders((prev) =>
         prev.map((order) => ({
@@ -3692,11 +4068,10 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
     }
     try {
       await authFetch(`/api/orders/${item.order_id}/items/${item.id}`, { method: "DELETE" });
+      await markKitchenItemsSynced([item.id]);
     } catch (err) {
       console.error("Cancel error:", err);
-      // Rollback on error
-      pendingStatusRef.current.delete(item.id);
-      fetchOrders();
+      // Phase 4a: KHÔNG rollback — giữ optimistic update
     }
     setItemActionLoading((prev) => ({ ...prev, [key]: false }));
   };
@@ -3826,6 +4201,15 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
           <span className="text-sm font-bold text-gray-300 uppercase tracking-wide">
             {isKitchen ? "Bếp" : "Quầy"}
           </span>
+          {!isOnline && (
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-yellow-600 text-yellow-100">OFFLINE</span>
+          )}
+          {kitchenSync.pendingCount > 0 && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-600/20 text-yellow-400 text-xs font-bold animate-pulse">
+              <Icon name="refresh-cw" className="w-3 h-3" />
+              {kitchenSync.pendingCount} chờ đồng bộ
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
