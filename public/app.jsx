@@ -3785,12 +3785,9 @@ function KitchenView({ unit, onLogout, fill = "screen" }) {
           if (local.status === 'reduced') {
             return { ...it, quantity: local.quantity ?? it.quantity };
           }
-          // Local wins if: higher priority status (pending > processing > completed)
+          // Local luôn thắng nếu local status khác server (kitchen staff là authority)
           if (local.status && local.status !== it.status) {
-            const priority = { pending: 3, processing: 2, completed: 1 };
-            if (priority[local.status] > priority[it.status]) {
-              return { ...it, status: local.status };
-            }
+            return { ...it, status: local.status };
           }
         }
         return it;
